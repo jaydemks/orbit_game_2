@@ -7,7 +7,7 @@ const errors=[];page.on('pageerror',e=>errors.push(e.message));page.on('console'
 await page.goto('http://127.0.0.1:5173/?test');await page.waitForFunction(()=>window.__ORBIT__?.view);
 await page.waitForTimeout(1500);await page.screenshot({path:'docs/screenshots/menu.jpg',type:'jpeg',quality:86});
 for(const [level,name] of [[2,'aurelia'],[6,'tidal'],[12,'obsidian'],[18,'zenith']]){
-  await page.evaluate(index=>{window.__ORBIT__.progress.unlocked=24;window.__ORBIT__.start(index);},level);
+  await page.evaluate(async index=>{window.__ORBIT__.progress.unlocked=24;await window.__ORBIT__.start(index);},level);
   await page.waitForTimeout(4000);
   await page.screenshot({path:`docs/screenshots/${name}.jpg`,type:'jpeg',quality:86});
 }

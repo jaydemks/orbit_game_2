@@ -13,7 +13,7 @@ if(await page.evaluate(()=>Boolean(window.__ORBIT__))) {
   await page.getByRole('button',{name:'ATELIER',exact:true}).click();await page.screenshot({path:'artifacts/atelier-desktop.png'});
   await page.evaluate(()=>window.__ORBIT__.start(0));await page.waitForTimeout(2000);
   await page.screenshot({path:'artifacts/game-desktop.png'});
-  await page.evaluate(()=>{window.__ORBIT__.progress.unlocked=24;window.__ORBIT__.start(15);});await page.waitForTimeout(1500);
+  await page.evaluate(async()=>{window.__ORBIT__.progress.unlocked=24;await window.__ORBIT__.start(15);});await page.waitForTimeout(1500);
   await page.screenshot({path:'artifacts/world-three.png'});
   await page.evaluate(()=>window.__ORBIT__.menu());
   await page.setViewportSize({width:390,height:844});await page.waitForTimeout(2000);

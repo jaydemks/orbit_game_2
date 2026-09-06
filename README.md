@@ -16,6 +16,7 @@
 - **Real challenges:** mandatory gap jumps from level 2, burning tiles from level 3, spikes and a countdown. Falls, burns and timeouts cost lives; lose all three and retry.
 - **Six earnable skins:** refractive glass, iridescent crystal, pearl, obsidian and a classic beach ball. Coins are banked when you finish a level; progress saves in your browser.
 - Smooth third-person camera, keyboard and touch controls. No downloads, accounts or paid purchases.
+- Loading progress with shader warm-up, time/key/campaign bars, batched rendering and adaptive resolution. [Performance notes](docs/performance.md).
 
 | Control | Action |
 | --- | --- |

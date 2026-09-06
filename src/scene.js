@@ -6,8 +6,10 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { LivingEnvironment } from './environment.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 const UP = new THREE.Vector3(0, 1, 0);
+const FRONT = new THREE.Vector3(0, 0, 1);
 const v3 = (v, fallback = [0, 0, 0]) => {
   if (v?.isVector3) return v.clone();
   if (Array.isArray(v)) return new THREE.Vector3(...v);
@@ -93,11 +95,22 @@ export class WorldView {
     this.mode = 'menu';
     this.quality = 'high';
     this.items = [];
+    this.itemTemplates = new Map();
+    this.sharedGeometry = new Set();
+    this.sharedMaterial = new Set();
+    this.scratch = {
+      old: new THREE.Vector3(), movement: new THREE.Vector3(), axis: new THREE.Vector3(),
+      position: new THREE.Vector3(), target: new THREE.Vector3(), up: new THREE.Vector3(),
+      direction: new THREE.Vector3(), right: new THREE.Vector3(), offset: new THREE.Vector3(),
+      matrix: new THREE.Matrix4(), quaternion: new THREE.Quaternion(),
+    };
     this.skinId = 'glacier';
     this.collected = new Set();
     this.elapsed = 0;
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false, powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.75));
+    this.renderer.info.autoReset = false;
+    this.renderer.transmissionResolutionScale = .75;
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -120,7 +133,7 @@ export class WorldView {
     this.scene.add(this.hemisphere);
     this.sun = new THREE.DirectionalLight(0xffedcc, 2.5);
     this.sun.position.set(-7, 13, 8); this.sun.castShadow = true;
-    this.sun.shadow.mapSize.set(2048, 2048);
+    this.sun.shadow.mapSize.set(1536, 1536);
     Object.assign(this.sun.shadow.camera, { left: -13, right: 13, top: 13, bottom: -13, near: 1, far: 65 });
     this.sun.shadow.normalBias = .025; this.sun.shadow.bias = -.00015;
     this.sun.shadow.radius = 4;
@@ -217,9 +230,10 @@ export class WorldView {
     for (const child of [...group.children]) {
       group.remove(child);
       child.traverse(o => {
-        if (o.geometry && o.geometry !== this.blockGeometry) o.geometry.dispose();
+        if (o.isInstancedMesh) o.dispose();
+        if (o.geometry && !this.sharedGeometry.has(o.geometry) && o.geometry !== this.blockGeometry) o.geometry.dispose();
         if (o.material && !this.blockMaterials.includes(o.material)) {
-          for (const m of Array.isArray(o.material) ? o.material : [o.material]) m.dispose();
+          for (const m of Array.isArray(o.material) ? o.material : [o.material]) if (!this.sharedMaterial.has(m)) m.dispose();
         }
       });
     }
@@ -241,11 +255,21 @@ export class WorldView {
     this.items = []; this.collected = new Set();
     const cubes = level.cubes || level.blocks || [];
     const box = new THREE.Box3();
+    const batches = [[], [], []];
     cubes.forEach((cell, i) => {
       const p = v3(cell.position || cell);
-      const m = this.blockMaterials[((i * 13) % 17 === 0) ? 2 : ((i * 7) % 11 === 0 ? 1 : 0)];
-      const cube = new THREE.Mesh(this.blockGeometry, m); cube.position.copy(p);
-      cube.castShadow = cube.receiveShadow = true; this.levelGroup.add(cube); box.expandByPoint(p);
+      batches[((i * 13) % 17 === 0) ? 2 : ((i * 7) % 11 === 0 ? 1 : 0)].push(p);
+      box.expandByPoint(p);
+    });
+    const matrix = new THREE.Matrix4();
+    batches.forEach((positions, index) => {
+      if (!positions.length) return;
+      const batch = new THREE.InstancedMesh(this.blockGeometry, this.blockMaterials[index], positions.length);
+      positions.forEach((p, i) => batch.setMatrixAt(i, matrix.makeTranslation(p.x, p.y, p.z)));
+      batch.instanceMatrix.needsUpdate = true;
+      batch.castShadow = batch.receiveShadow = true;
+      batch.computeBoundingSphere();
+      this.levelGroup.add(batch);
     });
     if (cubes.length) {
       box.getCenter(this.levelCenter);
@@ -268,6 +292,16 @@ export class WorldView {
   }
 
   _makeItem(item, index) {
+    const cached = this.itemTemplates.get(item.type);
+    if (cached) {
+      const root = cached.clone(true);
+      root.position.copy(facePosition(item.cell, item.normal, .51));
+      root.quaternion.setFromUnitVectors(UP, v3(item.normal, [0, 1, 0]));
+      const animated = root.children[0];
+      this.itemGroup.add(root);
+      this.items.push({ item, index, root, animated, baseY: animated.position.y, collectedAt: null });
+      return;
+    }
     const root = new THREE.Group();
     const n = v3(item.normal, [0, 1, 0]);
     root.position.copy(facePosition(item.cell, n, .51));
@@ -321,8 +355,10 @@ export class WorldView {
       }
     } else if (type === 'spike') {
       const plate = new THREE.Mesh(new RoundedBoxGeometry(.77, .05, .77, 2, .025), material(0x615d5c, { metalness: .55, roughness: .32 })); plate.position.y = .025; root.add(plate);
+      const spikeMaterial = material(0x8b7370, { metalness: .8, roughness: .24 });
+      const spikeGeometry = new THREE.ConeGeometry(.082, .26, 5);
       for (let x = -1; x <= 1; x++) for (let z = -1; z <= 1; z++) {
-        const spike = new THREE.Mesh(new THREE.ConeGeometry(.082, .26, 5), material(0x8b7370, { metalness: .8, roughness: .24 })); spike.position.set(x * .23, .16, z * .23); root.add(spike);
+        const spike = new THREE.Mesh(spikeGeometry, spikeMaterial); spike.position.set(x * .23, .16, z * .23); root.add(spike);
       }
     } else if (type === 'fruit') {
       const fruit = new THREE.Mesh(new THREE.SphereGeometry(.15, 24, 20), new THREE.MeshPhysicalMaterial({ color: 0xf17b43, roughness: .24, clearcoat: .8 })); fruit.scale.set(1, 1.08, 1); animated.add(fruit);
@@ -332,7 +368,37 @@ export class WorldView {
       const hand = new THREE.Mesh(new THREE.BoxGeometry(.017, .11, .027), material(0x5381a8)); hand.position.y = .042; animated.add(hand);
       const hand2 = hand.clone(); hand2.rotation.z = Math.PI / 2; hand2.scale.y = .7; hand2.position.set(.035, 0, 0); animated.add(hand2); animated.position.y = .3;
     }
-    root.traverse(o => { if (o.isMesh) o.castShadow = type !== 'exit'; });
+    // Bake rigid repeated details once, then reuse their GPU resources across levels.
+    if (type === 'spike' || type === 'coin' || type === 'key') {
+      for (const group of [root, animated]) {
+        const byMaterial = new Map();
+        for (const mesh of group.children) if (mesh.isMesh) {
+          const batch = byMaterial.get(mesh.material) || [];
+          batch.push(mesh); byMaterial.set(mesh.material, batch);
+        }
+        for (const [mat, meshes] of byMaterial) if (meshes.length > 1) {
+          const parts = meshes.map(mesh => {
+            mesh.updateMatrix();
+            const geometry = mesh.geometry.index ? mesh.geometry.toNonIndexed() : mesh.geometry.clone();
+            return geometry.applyMatrix4(mesh.matrix);
+          });
+          const merged = mergeGeometries(parts);
+          parts.forEach(part => part.dispose());
+          if (merged) {
+            const originals = new Set(meshes.map(mesh => mesh.geometry));
+            meshes.forEach(mesh => group.remove(mesh));
+            originals.forEach(geometry => geometry.dispose());
+            group.add(new THREE.Mesh(merged, mat));
+          }
+        }
+      }
+    }
+    root.traverse(o => {
+      if (o.isMesh) o.castShadow = false;
+      if (o.geometry) this.sharedGeometry.add(o.geometry);
+      if (o.material) this.sharedMaterial.add(o.material);
+    });
+    this.itemTemplates.set(type, root.clone(true));
     if (type !== 'coin' && type !== 'key') gold.dispose();
     this.itemGroup.add(root);
     this.items.push({ item, index, root, animated, baseY: animated.position.y, collectedAt: null });
@@ -423,10 +489,59 @@ export class WorldView {
 
   setQuality(quality) {
     this.quality = quality;
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, quality === 'balanced' ? 1.15 : 1.75));
+    this.resolutionCeiling = Math.min(window.devicePixelRatio || 1, quality === 'balanced' ? 1.15 : 1.75);
+    this.renderer.setPixelRatio(this.resolutionCeiling);
+    this.renderer.transmissionResolutionScale = quality === 'balanced' ? .5 : .75;
+    const shadowSize = quality === 'balanced' ? 1024 : 1536;
+    if (this.sun.shadow.mapSize.x !== shadowSize) {
+      this.sun.shadow.mapSize.set(shadowSize, shadowSize);
+      this.sun.shadow.map?.dispose(); this.sun.shadow.map = null;
+    }
+    this.adaptiveFrames = 0; this.adaptiveTotal = 0; this.adaptiveWarmup = 120;
     this.bloom.enabled = quality !== 'balanced';
     this.livingEnvironment.setQuality(quality);
     this.resize();
+  }
+
+  async prepare(onProgress = () => {}) {
+    const nextFrame = () => new Promise(resolve => requestAnimationFrame(resolve));
+    onProgress(.1, 'Preparing scene');
+    await nextFrame();
+    onProgress(.3, 'Compiling materials');
+    await this.renderer.compileAsync(this.scene, this.camera);
+    onProgress(.7, 'Warming lighting and effects');
+    await nextFrame();
+    this.update(0, this.elapsed);
+    await nextFrame();
+    this.update(0, this.elapsed);
+    this.adaptiveWarmup = 120;
+    onProgress(1, 'Ready');
+  }
+
+  getPerformanceStats() {
+    return {
+      calls: this.renderer.info.render.calls,
+      triangles: this.renderer.info.render.triangles,
+      programs: this.renderer.info.programs?.length || 0,
+      pixelRatio: this.renderer.getPixelRatio(),
+    };
+  }
+
+  sampleFrame(ms) {
+    if (!Number.isFinite(ms) || ms <= 0 || ms > 150 || document.hidden) return;
+    if ((this.adaptiveWarmup || 0) > 0) { this.adaptiveWarmup--; return; }
+    this.adaptiveTotal = (this.adaptiveTotal || 0) + ms;
+    this.adaptiveFrames = (this.adaptiveFrames || 0) + 1;
+    if (this.adaptiveFrames < 120) return;
+    const average = this.adaptiveTotal / this.adaptiveFrames;
+    this.adaptiveTotal = 0; this.adaptiveFrames = 0;
+    const ceiling = this.resolutionCeiling || Math.min(window.devicePixelRatio || 1, 1.75);
+    const current = this.renderer.getPixelRatio();
+    const next = clamp(current + (average > 23 ? -.15 : average < 17.5 ? .05 : 0), Math.min(.8, ceiling), ceiling);
+    if (Math.abs(next - current) < .01) return;
+    this.renderer.setPixelRatio(next);
+    this.resize();
+    this.adaptiveWarmup = 180;
   }
 
   resize() {
@@ -439,7 +554,7 @@ export class WorldView {
 
   update(dt, elapsed) {
     dt = clamp(dt || 0, 0, .07); this.elapsed = elapsed ?? this.elapsed + dt;
-    const oldPosition = this.playerPosition.clone();
+    const oldPosition = this.scratch.old.copy(this.playerPosition);
     this.transition = Math.min(1, this.transition + dt / (this.moveDuration || .24));
     const t = smooth(this.transition);
     this.playerPosition.lerpVectors(this.fromPosition, this.targetPosition, t);
@@ -454,10 +569,10 @@ export class WorldView {
     if (this.jump) this.playerPosition.addScaledVector(this.targetNormal, Math.sin(this.transition * Math.PI) * .75);
     if (this.fall) this.playerPosition.addScaledVector(this.targetNormal, -Math.pow(this.transition, 3) * 2.5);
     this.playerNormal.lerp(this.targetNormal, 1 - Math.exp(-dt * 13)).normalize();
-    const movement = this.playerPosition.clone().sub(oldPosition);
+    const movement = this.scratch.movement.copy(this.playerPosition).sub(oldPosition);
     if (movement.lengthSq() > .000001) {
-      const axis = new THREE.Vector3().crossVectors(this.playerNormal, movement).normalize();
-      this.ball.quaternion.premultiply(new THREE.Quaternion().setFromAxisAngle(axis, movement.length() / .315));
+      const axis = this.scratch.axis.crossVectors(this.playerNormal, movement).normalize();
+      this.ball.quaternion.premultiply(this.scratch.quaternion.setFromAxisAngle(axis, movement.length() / .315));
     }
     this.ball.position.copy(this.playerPosition);
     this.ball.scale.setScalar(this.mode === 'menu' ? 1.5 : 1);
@@ -466,7 +581,7 @@ export class WorldView {
       this.ball.rotateY(dt * .17);
     }
     this.contact.position.copy(this.targetPosition).addScaledVector(this.targetNormal, -.303);
-    this.contact.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), this.targetNormal);
+    this.contact.quaternion.setFromUnitVectors(FRONT, this.targetNormal);
     this.contact.material.opacity = this.jump && this.transition < 1 ? .10 : .24;
     for (const entry of this.items) {
       const { item, animated, root, index, baseY, collectedAt } = entry;
@@ -479,7 +594,7 @@ export class WorldView {
       }
       if (item.type === 'lava') {
         animated.children[0].material.uniforms.uTime.value=this.elapsed;
-        animated.children.slice(1).forEach((flame,i)=>{flame.scale.y=.55+(Math.sin(this.elapsed*7+i*3)*.5+.5)*.95;});
+        for (let i = 1; i < animated.children.length; i++) animated.children[i].scale.y = .55 + (Math.sin(this.elapsed * 7 + (i - 1) * 3) * .5 + .5) * .95;
       } else if (item.type !== 'spike') {
         animated.position.y = baseY + Math.sin(this.elapsed * 2 + index * .7) * .035;
         animated.rotation.y = this.elapsed * (item.type === 'exit' ? .4 : 1.2) + index;
@@ -488,13 +603,13 @@ export class WorldView {
     this.decorGroup.children.forEach((o, i) => { o.rotation.y += dt * .045 * (i % 2 ? 1 : -1); });
     this.dust.rotation.y = this.elapsed * .004;
     this.livingEnvironment.update(dt,this.elapsed);
-    const desiredPosition = new THREE.Vector3(); const target = new THREE.Vector3(); const cameraUp = new THREE.Vector3();
+    const desiredPosition = this.scratch.position; const target = this.scratch.target; const cameraUp = this.scratch.up;
     if (this.mode === 'menu') {
       const distance = Math.max(15.4, this.levelRadius * 4.7) * (this.width < 800 ? Math.max(1.2, .72 / this.camera.aspect) : 1);
-      const direction = new THREE.Vector3(1, 1.12, 1.35).normalize();
-      const right = new THREE.Vector3().crossVectors(direction, UP).negate().normalize();
+      const direction = this.scratch.direction.set(1, 1.12, 1.35).normalize();
+      const right = this.scratch.right.crossVectors(direction, UP).negate().normalize();
       target.copy(this.levelCenter).addScaledVector(right, this.width > 800 ? -distance * .18 : 0);
-      if (this.width < 800) target.addScaledVector(new THREE.Vector3().crossVectors(direction, right).normalize(), distance * .16);
+      if (this.width < 800) target.addScaledVector(this.scratch.offset.crossVectors(direction, right).normalize(), distance * .16);
       desiredPosition.copy(target).addScaledVector(direction, distance);
       cameraUp.copy(UP);
     } else {
@@ -502,17 +617,18 @@ export class WorldView {
       this.cameraFrame.slerpQuaternions(this.cameraFrameFrom, this.cameraFrameTarget, smooth(this.cameraTurnProgress));
       this.cameraAnchor.lerp(this.playerPosition, this.snapCamera ? 1 : 1 - Math.exp(-dt * 5));
       target.copy(this.cameraAnchor);
-      desiredPosition.copy(target).add(new THREE.Vector3(.8, 4.8, 6.5).applyQuaternion(this.cameraFrame));
+      desiredPosition.copy(target).add(this.scratch.offset.set(.8, 4.8, 6.5).applyQuaternion(this.cameraFrame));
       cameraUp.copy(UP).applyQuaternion(this.cameraFrame);
     }
     const blend = this.snapCamera ? 1 : 1 - Math.exp(-dt * (this.mode === 'menu' ? 2.5 : 5));
     if (this.mode === 'menu') this.camera.position.lerp(desiredPosition, blend);
     else this.camera.position.copy(desiredPosition);
-    const m = new THREE.Matrix4().lookAt(this.camera.position, target, cameraUp);
-    const desiredQuaternion = new THREE.Quaternion().setFromRotationMatrix(m);
+    const m = this.scratch.matrix.lookAt(this.camera.position, target, cameraUp);
+    const desiredQuaternion = this.scratch.quaternion.setFromRotationMatrix(m);
     if (this.mode === 'menu') this.camera.quaternion.slerp(desiredQuaternion, blend);
     else this.camera.quaternion.copy(desiredQuaternion);
     this.snapCamera = false;
+    this.renderer.info.reset();
     this.composer.render();
   }
 
@@ -520,6 +636,9 @@ export class WorldView {
     this.livingEnvironment.dispose();
     this._clearGroup(this.levelGroup); this._clearGroup(this.itemGroup); this._clearGroup(this.decorGroup);
     this.scene.traverse(o => { o.geometry?.dispose(); if (o.material) for (const m of Array.isArray(o.material) ? o.material : [o.material]) m.dispose(); });
+    this.sharedGeometry.forEach(geometry => geometry.dispose());
+    this.sharedMaterial.forEach(mat => mat.dispose());
+    this.itemTemplates.clear();
     this.stoneMap.dispose(); this.glowMap.dispose(); this.classicMap.dispose(); this.environment.dispose();
     this.composer.dispose(); this.renderer.dispose();
   }

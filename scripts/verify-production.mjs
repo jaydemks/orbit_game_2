@@ -23,6 +23,7 @@ try {
   page.on('request',r=>{if(!r.url().startsWith('http://127.0.0.1:4179/')&&!r.url().startsWith('data:'))external.push(r.url());});
   await page.goto('http://127.0.0.1:4179/orbit/');
   await page.getByRole('button',{name:'Start your journey'}).click();
+  await page.locator('#boot').waitFor({state:'hidden'});
   await page.keyboard.press('ArrowUp');await page.waitForTimeout(500);
   assert.equal(await page.locator('#interface').getAttribute('data-screen'),'playing');
   assert.deepEqual(errors,[]);assert.deepEqual(external,[]);

@@ -19,6 +19,8 @@ export class LivingEnvironment {
     this.animated = [];
     this.uniforms = [];
     this.resources = new Set();
+    this.islands = [];
+    this.islandBatches = [];
   }
 
   own(resource) { this.resources.add(resource); return resource; }
@@ -33,20 +35,45 @@ export class LivingEnvironment {
     return mesh;
   }
 
-  batchDetails(group) {
+  batchIslands() {
     const batches = new Map();
-    for (const child of group.children) {
-      if (!child.isMesh || child.children.length) continue;
-      const key = `${child.geometry.uuid}:${child.material.uuid}`;
-      if (!batches.has(key)) batches.set(key, []);
-      batches.get(key).push(child);
+    // Flatten all islands together, including the legs nested under stone arches.
+    // Matrices are relative to the scenery group, so it remains freely movable.
+    for (let index = 0; index < this.islands.length; index++) {
+      const island = this.islands[index].object;
+      island.updateMatrixWorld(true);
+      island.traverse(child => {
+        if (!child.isMesh) return;
+        const key = `${child.geometry.uuid}:${child.material.uuid}`;
+        if (!batches.has(key)) batches.set(key, []);
+        batches.get(key).push({ mesh: child, island: index });
+      });
     }
-    for (const meshes of batches.values()) {
-      if (meshes.length < 2) continue;
-      const instances = this.own(new THREE.InstancedMesh(meshes[0].geometry, meshes[0].material, meshes.length));
-      meshes.forEach((mesh, i) => { mesh.updateMatrix(); instances.setMatrixAt(i, mesh.matrix); group.remove(mesh); });
-      group.add(instances);
+    const inverse = new THREE.Matrix4().copy(this.group.matrixWorld).invert();
+    const matrix = new THREE.Matrix4();
+    for (const entries of batches.values()) {
+      const instances = this.own(new THREE.InstancedMesh(entries[0].mesh.geometry, entries[0].mesh.material, entries.length));
+      instances.name = 'Island scenery batch';
+      instances.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      const baseY = new Float32Array(entries.length);
+      const islandIndices = new Uint8Array(entries.length);
+      entries.forEach(({ mesh, island }, i) => {
+        matrix.multiplyMatrices(inverse, mesh.matrixWorld);
+        instances.setMatrixAt(i, matrix);
+        baseY[i] = matrix.elements[13];
+        islandIndices[i] = island;
+      });
+      instances.computeBoundingSphere();
+      // Bobbing never moves beyond this margin; no per-frame bounds rebuild.
+      instances.boundingSphere.radius += .4;
+      this.islandBatches.push({ instances, baseY, islandIndices });
+      this.group.add(instances);
     }
+    for (const island of this.islands) {
+      this.group.remove(island.object);
+      delete island.object;
+    }
+    this.islandOffsets = new Float32Array(this.islands.length);
   }
 
   clear() {
@@ -55,6 +82,10 @@ export class LivingEnvironment {
     this.resources.clear();
     this.animated = [];
     this.uniforms = [];
+    this.islands = [];
+    this.islandBatches = [];
+    this.islandOffsets = null;
+    this.clouds = null;
   }
 
   setLevel(level) {
@@ -86,6 +117,7 @@ export class LivingEnvironment {
     const crystalGeo = this.own(new THREE.ConeGeometry(.4, 2.8, 5));
     const trunkGeo = this.own(new THREE.CylinderGeometry(.07, .13, 1.5, 5));
     const archGeo = this.own(new THREE.TorusGeometry(1.65, .29, 5, 18, Math.PI));
+    const legGeo = this.own(new THREE.BoxGeometry(.57, 1.1, .58));
     const stone = this.material(0xc6b58f);
     // Farther and lower than all playable surfaces, with a clear central corridor.
     for (let i = 0; i < 17; i++) {
@@ -107,7 +139,6 @@ export class LivingEnvironment {
         const arch = this.mesh(archGeo, stone, island);
         arch.position.y = .7;
         arch.rotation.y = rand() * Math.PI;
-        const legGeo = this.own(new THREE.BoxGeometry(.57, 1.1, .58));
         for (const side of [-1, 1]) {
           const leg = this.mesh(legGeo, stone, arch);
           leg.position.set(side * 1.65, -.55, 0);
@@ -128,9 +159,10 @@ export class LivingEnvironment {
           crystal.rotation.set((rand() - .5) * .5, rand() * 6, (rand() - .5) * .5);
         }
       }
-      this.batchDetails(island);
-      this.animated.push({ object: island, type: 'island', y: island.position.y, phase: rand() * 7, speed: .15 + rand() * .15 });
+      this.islands.push({ object: island, phase: rand() * 7, speed: .15 + rand() * .15 });
     }
+    this.group.updateWorldMatrix(true, true);
+    this.batchIslands();
 
     // Shared instanced wisps avoid hundreds of cloud draw calls.
     const cloudGeo = this.own(new THREE.IcosahedronGeometry(1, 2));
@@ -209,17 +241,26 @@ export class LivingEnvironment {
   }
 
   update(dt, elapsed) {
+    if (!this.group.visible) return;
     for (const u of this.uniforms) u.time.value = elapsed;
+    for (let i = 0; i < this.islands.length; i++) {
+      const island = this.islands[i];
+      this.islandOffsets[i] = Math.sin(elapsed * island.speed + island.phase) * .38;
+    }
+    for (const { instances, baseY, islandIndices } of this.islandBatches) {
+      const matrices = instances.instanceMatrix.array;
+      for (let i = 0; i < baseY.length; i++) matrices[i * 16 + 13] = baseY[i] + this.islandOffsets[islandIndices[i]];
+      instances.instanceMatrix.needsUpdate = true;
+    }
     for (const a of this.animated) {
-      if (a.type === 'island') a.object.position.y = a.y + Math.sin(elapsed * a.speed + a.phase) * .38;
-      else if (a.type === 'ember') { a.object.position.y = Math.sin(elapsed * .14) * 2; a.object.rotation.y = elapsed * .006; }
+      if (a.type === 'ember') { a.object.position.y = Math.sin(elapsed * .14) * 2; a.object.rotation.y = elapsed * .006; }
       else a.object.rotation.y = elapsed * a.speed;
     }
   }
 
   setQuality(quality) {
     this.quality = quality;
-    if (this.clouds) this.clouds.count = quality === 'low' ? 30 : quality === 'medium' ? 48 : 72;
+    if (this.clouds) this.clouds.count = quality === 'low' ? 30 : quality === 'balanced' || quality === 'medium' ? 48 : 72;
   }
 
   dispose() { this.clear(); this.scene.remove(this.group); }
