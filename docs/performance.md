@@ -6,7 +6,11 @@ Repeated world geometry is instanced across islands. Cubes use at most three mat
 
 Balanced mode reduces shadow resolution, cloud count, glass target resolution and postprocessing. Both quality modes adapt pixel ratio after sustained slow frames, with a warm-up and recovery delay to avoid oscillation. Hidden tabs skip rendering and hidden scenery skips animation.
 
-## Local comparison
+## ORBIT 2
+
+The new renderer retains instancing and preparation from ORBIT. Skin effects use a fixed pool of 240 GPU points and 96 instanced surface marks. Flying actors and mechanical scenery are batched; particles never create individual draw calls. The ORBIT 2 browser check measured 85 calls on level 1 with Inferno and 213 on level 24, below the existing 270-call regression limit. These are draw-call measurements, not a promise of a particular frame rate on phones.
+
+## Original ORBIT baseline comparison
 
 Chrome, Windows, headless, 1440 × 900, device pixel ratio 1, High preset. Draw calls include the complete frame (shadows, transmission and postprocessing).
 

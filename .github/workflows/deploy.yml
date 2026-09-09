@@ -1,4 +1,4 @@
-name: Deploy ORBIT to GitHub Pages
+name: Deploy ORBIT 2 to GitHub Pages
 on:
   push:
     branches: [main]

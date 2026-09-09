@@ -10,7 +10,8 @@ const NAMES = [
   'First contact','Around the bend','The other side','Ribbon dance','Stepping stones','Golden hour',
   'Blue current','Undertow','Coral staircase','Tidal loop','Deep passage','Pearl horizon',
   'Night shift','Ember bridge','Fault line','The crucible','Dark matter','Event horizon',
-  'Skyward','Cloud atlas','Helix','The observatory','Infinity garden','Home among stars'
+  'Skyward','Cloud atlas','Helix','The observatory','Infinity garden','Home among stars',
+  'Neon canopy','Prism causeway','Furnace ascent','Clockwork orbit','Ion islands','Gravity engine','Aurora rail','The singularity'
 ];
 const SUBTITLES = [
   'Collect the key. Find your way home.', 'A missing block. Press Space to leap across.', 'Glowing tiles burn. Jump over them with Space.',
@@ -20,7 +21,11 @@ const SUBTITLES = [
   'Follow the embers through the dark.', 'A narrow path. An open universe.', 'Find your balance on fractured ground.',
   'Keep rolling. Stay focused.', 'Two gaps to cross. Take your time.', 'There is always another side.',
   'The final ascent begins here.', 'Read the islands in the sky.', 'Turn the universe around you.',
-  'Look beyond the obvious path.', 'Cross the void. Every island holds a secret.', 'One last journey. Every world within you.'
+  'Look beyond the obvious path.', 'Cross the void. Every island holds a secret.', 'One last journey. Every world within you.',
+  'An electric forest. Brake before every turn.', 'Build speed, then leap across the luminous divide.',
+  'Hot steps rise toward a colder sky.', 'Follow the light around the machine.',
+  'Separate islands. One continuous journey.', 'Climb the engine, then find its hidden heart.',
+  'A narrow ribbon above the storm.', 'Every skill. One final portal.'
 ];
 
 function makeShape(index) {
@@ -122,8 +127,8 @@ function buildLevel(index) {
     const candidates=queue.filter(f=>f.distance>2&&f.normal[0]===1&&!used.has(faceId(f.cell,f.normal)));
     for(let j=0;j<Math.min(1+Math.floor(index/4),candidates.length);j++)place('spike',candidates[j*3%candidates.length]);
   }
-  return {id:index+1,name:NAMES[index],world:WORLDS[Math.floor(index/6)],worldIndex:Math.floor(index/6),subtitle:SUBTITLES[index],time:150+Math.floor(index/6)*35+(index%6)*12,cubes,start,items};
+  return {id:index+1,name:NAMES[index],world:WORLDS[index<24?Math.floor(index/6):(index-24)%4],worldIndex:index<24?Math.floor(index/6):(index-24)%4,advanced:index>=24,emissive:index>=24,subtitle:SUBTITLES[index],time:150+Math.floor(index/6)*35+(index%6)*12,cubes,start,items};
 }
 
-export const LEVELS = Array.from({length:24},(_,i)=>buildLevel(i));
+export const LEVELS = Array.from({length:32},(_,i)=>buildLevel(i));
 export const WORLD_NAMES = WORLDS;

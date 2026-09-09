@@ -10,19 +10,23 @@ import { LEVELS } from './levels.js';
 import { WorldView, HERO_LEVEL } from './scene.js';
 import { UI } from './ui.js';
 import { Soundscape } from './audio.js';
+import musicTracks from 'virtual:orbit-music';
 import { readProgress, saveProgress, awardCompletion, SKINS } from './progress.js';
 import { loading } from './loading.js';
 
 const progress = readProgress();
-const sound = new Soundscape();
+const sound = new Soundscape(musicTracks);
 sound.setEnabled(progress.sound);
 let view, ui, earned = 0;
 const held = new Set();
+const touchHeld = new Set();
+let transitionRemaining = 0, respawnPose = null;
 let inputDelay = 0, jumpBuffer = 0, respawnTimer;
 let loadingBusy = true, last=performance.now(),elapsed=0;
-const game = new Game({ onChange: snapshot => ui?.update({...snapshot,earned},progress), onEvent: event => {
+const game = new Game({ onChange: snapshot => { if (!transitionRemaining) ui?.update({...snapshot,earned},progress); }, onEvent: event => {
   if (event.type === 'start') {
-    clearTimeout(respawnTimer); jumpBuffer=0;
+    document.querySelector('.pause-button')?.removeAttribute('disabled');
+    clearTimeout(respawnTimer); jumpBuffer=0; transitionRemaining=0; respawnPose=null;touchHeld.clear();
     earned = 0;
     view?.setLevel(LEVELS[game.levelIndex]);
     view?.setPlayer(game.cell,game.normal,game.forward,{instant:true});
@@ -33,8 +37,8 @@ const game = new Game({ onChange: snapshot => ui?.update({...snapshot,earned},pr
     sound.play(event.jump?'jump':event.type);
   }
   if (event.type === 'respawn') {
-    held.clear();jumpBuffer=0;
-    respawnTimer=setTimeout(()=>view?.setPlayer(event.to.cell,event.to.normal,event.to.forward,{instant:true}),450);
+    held.clear();touchHeld.clear();jumpBuffer=0;
+    respawnPose=event.to;
   }
   if (event.type === 'collect') {
     view?.setCollected(game.collected);
@@ -44,20 +48,24 @@ const game = new Game({ onChange: snapshot => ui?.update({...snapshot,earned},pr
     if(event.item.type==='fruit') ui?.toast('Rare fruit · +5 coins');
   }
   if (event.type === 'damage') {
+    document.querySelector('.pause-button')?.setAttribute('disabled','');
+    transitionRemaining=view?.transition(event.reason) || 1.5; held.clear();touchHeld.clear();jumpBuffer=0;
     sound.play('lost'); ui?.toast({fall:'Into the void. Try again!',spike:'Watch out for spikes!',burn:'Too hot! Jump over molten tiles.',timeout:'Time is up!'}[event.reason]);
-    document.body.classList.remove('damage-flash');void document.body.offsetWidth;document.body.classList.add('damage-flash');
   }
   if (event.type === 'blocked') {sound.play('exitLocked'); ui?.toast(event.reason==='keys'?`Keys needed to unlock the portal: ${event.remaining}`:'The path is blocked');}
   if (event.type === 'won') {
+    document.querySelector('.pause-button')?.setAttribute('disabled','');
+    transitionRemaining=view?.transition('won') || 1.8;touchHeld.clear();jumpBuffer=0;
     earned = awardCompletion(progress,game.levelIndex,game.getSnapshot());
     persist(); sound.play('won'); held.clear();
   }
   if (event.type === 'lost') {sound.play('lost'); held.clear();}
+  if (event.type === 'jump') sound.play('jump');
 }});
 
 function persist() { if(!saveProgress(progress)) ui?.toast('Local saving is unavailable in this browser'); ui?.setProgress(progress); }
 async function prepareScene(label,build) {
-  loadingBusy=true;held.clear();loading.show(label);
+  loadingBusy=true;held.clear();touchHeld.clear();loading.show(label);
   try {
     await loading.paint();build();loading.set(.2,'Preparing materials');await loading.paint();
     await view.prepare((fraction,stage)=>loading.set(.2+fraction*.78,stage));
@@ -70,10 +78,10 @@ async function start(index) {
   sound.unlock(); held.clear();
   const chosen = Number.isInteger(index)?index:game.state==='won'?Math.min(LEVELS.length-1,game.levelIndex+1):progress.unlocked-1;
   if(chosen<0 || chosen>=progress.unlocked || chosen>=LEVELS.length)return;
-  if(await prepareScene(`Building ${LEVELS[chosen].name}`,()=>{game.start(chosen);ui.showScreen('game');}))ui.toast(LEVELS[chosen].subtitle);
+  if(await prepareScene(`Building ${LEVELS[chosen].name}`,()=>{game.setDifficulty(progress.difficulty);game.start(chosen);ui.showScreen('game');}))ui.toast(LEVELS[chosen].subtitle);
 }
 function buildMenu() {
-  clearTimeout(respawnTimer);jumpBuffer=0;
+  clearTimeout(respawnTimer);jumpBuffer=0;transitionRemaining=0;respawnPose=null;touchHeld.clear();
   held.clear(); game.state='menu';
   view?.setMode('menu'); view?.setLevel(HERO_LEVEL);
   view?.setPlayer(HERO_LEVEL.start.cell,HERO_LEVEL.start.normal,HERO_LEVEL.start.forward,{instant:true});
@@ -91,9 +99,10 @@ async function skin(id) {
   progress.skin=id;persist();
   if(await prepareScene('Polishing your new material',()=>view.setSkin(id)))ui.toast('New perspective. New style.');
 }
-ui = new UI({ onPlay:start,onLevel:start,onSkin:skin,onPause:()=>{held.clear();game.pause(true);},onResume:()=>{game.pause(false);ui.showScreen('game');},onRetry:()=>start(game.levelIndex),onMenu:menu,onSettings:settings=>{
+ui = new UI({ onPlay:start,onLevel:start,onSkin:skin,onPause:()=>{held.clear();touchHeld.clear();if(!transitionRemaining)game.pause(true);},onResume:()=>{game.pause(false);ui.showScreen('game');},onRetry:()=>start(game.levelIndex),onMenu:menu,onSettings:settings=>{
   if(typeof settings.sound==='boolean') { progress.sound=settings.sound;sound.setEnabled(settings.sound);sound.unlock(); }
   if(settings.quality) {progress.quality=settings.quality;view?.setQuality(settings.quality);}
+  if(settings.difficulty) progress.difficulty=settings.difficulty==='extreme'?'extreme':'easy';
   persist();
 }});
 try {
@@ -107,9 +116,9 @@ try {
 }
 
 const keymap = {ArrowUp:'forward',KeyW:'forward',ArrowDown:'back',KeyS:'back',ArrowLeft:'left',KeyA:'left',ArrowRight:'right',KeyD:'right',Space:'jump'};
-function control(action) {if(loadingBusy)return;sound.unlock();if(action==='jump'){if(!game.jump()&&game.state==='playing')jumpBuffer=.32;}else game.move(action);}
+function control(action) {if(loadingBusy||transitionRemaining)return;sound.unlock();if(action==='jump'){if(!game.jump()&&game.state==='playing')jumpBuffer=.32;}else game.move(action);}
 window.addEventListener('keydown',event=>{
-  if(loadingBusy)return;
+  if(loadingBusy||transitionRemaining)return;
   if(event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement)return;
   if(event.code==='Escape') {if(game.state==='playing'){held.clear();game.pause(true);}else if(game.state==='paused'){game.pause(false);ui.showScreen('game');}return;}
   if(event.code==='KeyR'&&game.state==='playing'){start(game.levelIndex);return;}
@@ -119,17 +128,29 @@ window.addEventListener('keydown',event=>{
 });
 window.addEventListener('keyup',event=>held.delete(keymap[event.code]));
 window.addEventListener('orbit-control',event=>control(event.detail));
-window.addEventListener('blur',()=>{held.clear();if(!loadingBusy)game.pause(true);});
-document.addEventListener('visibilitychange',()=>{if(document.hidden){held.clear();if(!loadingBusy)game.pause(true);}});
+window.addEventListener('orbit-input',event=>{const {action,pressed}=event.detail;if(pressed&&!loadingBusy&&!transitionRemaining)touchHeld.add(action);else touchHeld.delete(action);});
+window.addEventListener('blur',()=>{held.clear();touchHeld.clear();if(!loadingBusy&&!transitionRemaining)game.pause(true);});
+document.addEventListener('visibilitychange',()=>{sound.setHidden(document.hidden);if(document.hidden){held.clear();touchHeld.clear();if(!loadingBusy&&!transitionRemaining)game.pause(true);}});
 window.addEventListener('resize',()=>view?.resize());
 function frame(now) {
   const realDt=Math.min((now-last)/1000,.25),dt=Math.min(realDt,.05);last=now;elapsed+=dt;
   if(loadingBusy||document.hidden){requestAnimationFrame(frame);return;}
+  if (transitionRemaining>0) {
+    transitionRemaining=Math.max(0,transitionRemaining-realDt);
+    if (!transitionRemaining) {
+      document.querySelector('.pause-button')?.removeAttribute('disabled');
+      if(respawnPose&&game.state==='playing') {view.setPlayer(respawnPose.cell,respawnPose.normal,respawnPose.forward,{instant:true});respawnPose=null;}
+      ui.update({...game.getSnapshot(),earned},progress);
+    }
+    view?.update(dt,elapsed);requestAnimationFrame(frame);return;
+  }
+  game.setInput(Object.fromEntries(['forward','back','left','right'].map(action=>[action,held.has(action)||touchHeld.has(action)])));
   game.update(realDt); inputDelay-=realDt;
+  const physicalPose=game.getPhysicalPose();if(physicalPose&&!transitionRemaining&&['playing','paused'].includes(game.state))view?.setPhysicalPose({...physicalPose,grounded:!physicalPose.airborne});
   if(jumpBuffer>0) {jumpBuffer-=realDt;if(game.state==='playing'&&game.cooldown<=0){game.jump();jumpBuffer=0;}}
-  if(inputDelay<=0&&held.size&&game.state==='playing') { const action=held.has('jump')?'jump':[...held].at(-1); control(action); inputDelay=.12; }
+  if(game.difficulty!=='extreme'&&inputDelay<=0&&held.size&&game.state==='playing') { const action=held.has('jump')?'jump':[...held].at(-1); control(action); inputDelay=.12; }
   view?.update(dt,elapsed);view?.sampleFrame(realDt*1000);requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
 // Explicit opt-in harness: no gameplay/debug globals in ordinary sessions.
-if(new URLSearchParams(location.search).has('test'))window.__ORBIT__={game,view,progress,start,skin,menu};
+if(new URLSearchParams(location.search).has('test'))window.__ORBIT__={game,view,progress,start,skin,menu,sound};

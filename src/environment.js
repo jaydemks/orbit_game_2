@@ -2,10 +2,10 @@ import * as THREE from 'three';
 
 // All scenery is generated locally. A level seed keeps its landscape recognizable.
 const PALETTES = [
-  { sky: 0xe7decc, rock: 0x9e8467, top: 0x698c62, accent: 0xb8d08b, cloud: 0xfff1d6 },
-  { sky: 0x96bec8, rock: 0x567f89, top: 0x8bc1ba, accent: 0x60e3d6, cloud: 0xe1f6ed },
-  { sky: 0x655966, rock: 0x3b3541, top: 0x605062, accent: 0xff7544, cloud: 0x8c7780 },
-  { sky: 0x373d61, rock: 0x645d86, top: 0xb2a0d5, accent: 0x87f0d0, cloud: 0x9589b1 },
+  { sky: 0x5799b8, rock: 0x92623e, top: 0x64ae53, accent: 0xb8d08b, cloud: 0xfff1d6 },
+  { sky: 0x32658c, rock: 0x567f89, top: 0x8bc1ba, accent: 0x60e3d6, cloud: 0xe1f6ed },
+  { sky: 0x343048, rock: 0x3b3541, top: 0x605062, accent: 0xff7544, cloud: 0x8c7780 },
+  { sky: 0x1d2345, rock: 0x645d86, top: 0xb2a0d5, accent: 0x87f0d0, cloud: 0x9589b1 },
 ];
 const randomFrom = seed => () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 4294967296; };
 
@@ -86,6 +86,7 @@ export class LivingEnvironment {
     this.islandBatches = [];
     this.islandOffsets = null;
     this.clouds = null;
+    this.flyers = null; this.rotors = null;
   }
 
   setLevel(level) {
@@ -183,6 +184,7 @@ export class LivingEnvironment {
     if (world === 1 || world === 2) this.addSurface(center, baseY - 16, p, world);
     if (world === 3) this.addCosmos(center, radius, rand);
     this.addMotes(center, radius, baseY, rand, p, world);
+    this.addActivity(center,radius,baseY,rand,p,world);
     this.setQuality(this.quality);
   }
 
@@ -240,8 +242,32 @@ export class LivingEnvironment {
     this.animated.push({ object: points, type: world === 2 ? 'ember' : 'stars', speed: .009 });
   }
 
+  addActivity(center,radius,baseY,rand,p,world) {
+    // Decorative actors stay outside the route and share three instanced draws.
+    const count=world===0?22:world===1?16:12;
+    const wingGeo=this.own(new THREE.ConeGeometry(.55,1.5,3));wingGeo.rotateZ(Math.PI/2);
+    const wingMat=this.material(world===0?0xffdf9c:world===1?0x63eeed:world===2?0xff7744:0xaaaaff,{emissive:p.accent,emissiveIntensity:world>1?.45:0});
+    const wings=this.own(new THREE.InstancedMesh(wingGeo,wingMat,count*2));wings.frustumCulled=false;wings.instanceMatrix.setUsage(THREE.DynamicDrawUsage);this.group.add(wings);
+    this.flyers={mesh:wings,count,center:center.clone(),radius,baseY,phases:Array.from({length:count},()=>rand()*6.28),dummy:new THREE.Object3D()};
+    const towerGeo=this.own(new THREE.CylinderGeometry(.5,.75,1,6));const towerMat=this.material(world===2?0x393349:world===3?0x64548e:0x987950,{metalness:world>1?.7:.1});
+    const towers=this.own(new THREE.InstancedMesh(towerGeo,towerMat,12));this.group.add(towers);
+    const wheelGeo=this.own(new THREE.TorusGeometry(2,.16,6,20));const wheelMat=this.material(p.accent,{metalness:.65,emissive:p.accent,emissiveIntensity:.3});const wheels=this.own(new THREE.InstancedMesh(wheelGeo,wheelMat,12));wheels.frustumCulled=false;this.group.add(wheels);
+    const bladeGeo=this.own(new THREE.BoxGeometry(.3,4.4,.17));const blades=this.own(new THREE.InstancedMesh(bladeGeo,towerMat,24));blades.frustumCulled=false;this.group.add(blades);
+    this.rotors={wheels,blades,positions:[],dummy:new THREE.Object3D()};const dummy=this.rotors.dummy;
+    for(let i=0;i<12;i++){
+      const a=i/12*Math.PI*2+.3;const height=5+rand()*7;const pos=new THREE.Vector3(center.x+Math.cos(a)*(radius+8),baseY+height*.5-2,center.z+Math.sin(a)*(radius+8));
+      dummy.position.copy(pos);dummy.scale.set(1,height,1);dummy.rotation.set(0,0,0);dummy.updateMatrix();towers.setMatrixAt(i,dummy.matrix);pos.y+=height*.5;this.rotors.positions.push(pos);
+    }
+    towers.computeBoundingSphere();
+  }
+
   update(dt, elapsed) {
     if (!this.group.visible) return;
+    if(this.flyers){const {mesh,count,center,radius,baseY,phases,dummy}=this.flyers;
+      for(let i=0;i<count;i++){const a=phases[i]+elapsed*(.035+(i%4)*.008);const r=radius+5+(i%5)*3;
+        for(let wing=0;wing<2;wing++){dummy.position.set(center.x+Math.cos(a)*r,baseY+7+Math.sin(a*3+i)*3+(i%3)*2,center.z+Math.sin(a)*r);dummy.rotation.set(0,-a,0);dummy.rotateZ((wing?1:-1)*(.3+Math.sin(elapsed*5+i)*.55));dummy.translateX(wing?.5:-.5);dummy.scale.set(1,worldScale(this.world),.25);dummy.updateMatrix();mesh.setMatrixAt(i*2+wing,dummy.matrix);}}
+      mesh.instanceMatrix.needsUpdate=true;}
+    if(this.rotors){const {wheels,blades,positions,dummy}=this.rotors;positions.forEach((p,i)=>{dummy.position.copy(p);dummy.scale.setScalar(1);dummy.rotation.set(0,i*.52,elapsed*.3*(i%2?1:-1));dummy.updateMatrix();wheels.setMatrixAt(i,dummy.matrix);for(let j=0;j<2;j++){dummy.rotation.z+=Math.PI/2;dummy.updateMatrix();blades.setMatrixAt(i*2+j,dummy.matrix);}});wheels.instanceMatrix.needsUpdate=true;blades.instanceMatrix.needsUpdate=true;}
     for (const u of this.uniforms) u.time.value = elapsed;
     for (let i = 0; i < this.islands.length; i++) {
       const island = this.islands[i];
@@ -265,3 +291,5 @@ export class LivingEnvironment {
 
   dispose() { this.clear(); this.scene.remove(this.group); }
 }
+
+function worldScale(world){return world===0?.35:world===1?.5:.2;}

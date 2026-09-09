@@ -44,7 +44,7 @@ function navigator(levelIndex) {
 }
 
 test('every campaign collectible and exit is reachable while avoiding hazards',()=>{
-  assert.equal(LEVELS.length,24);
+  assert.equal(LEVELS.length,32);
   for(let index=0;index<LEVELS.length;index++) {
     const level=LEVELS[index], reachable=navigator(index).search(level.start);
     const occupied=new Set(level.cubes.map(c=>c.join(',')));
@@ -58,7 +58,7 @@ test('every campaign collectible and exit is reachable while avoiding hazards',(
   }
 });
 
-test('all 24 levels can be won through real input, including every required key',()=>{
+test('all 32 levels can be won through real input, including every required key',()=>{
   for(let index=0;index<LEVELS.length;index++) {
     const game=new Game(),nav=navigator(index);game.start(index);
     const targets=[...game.level.items.filter(i=>i.type==='key'),game.level.items.find(i=>i.type==='exit')];

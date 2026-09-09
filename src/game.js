@@ -1,4 +1,5 @@
 import { LEVELS } from './levels.js';
+import { SurfacePhysics } from './physics.js';
 
 const add=(a,b)=>a.map((v,i)=>v+b[i]);
 const neg=a=>a.map(v=>-v);
@@ -17,9 +18,12 @@ const cross=(a,b)=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]]
 export class Game {
   constructor({onChange=()=>{},onEvent=()=>{}}={}) {
     this.onChange=onChange;this.onEvent=onEvent;
-    this.state='menu';this.levelIndex=0;this.cell=[0,0,0];this.normal=[0,1,0];this.forward=[0,0,-1];
+    this.difficulty='easy';this.physics=null;this.input={};this.state='menu';this.levelIndex=0;this.cell=[0,0,0];this.normal=[0,1,0];this.forward=[0,0,-1];
     this.time=0;this.lives=3;this.coins=0;this.keys=0;this.totalKeys=0;this.score=0;this.collected=new Set();this.cooldown=0;
   }
+  setDifficulty(value){this.difficulty=value==='extreme'?'extreme':'easy';this.physics=this.difficulty==='extreme'?new SurfacePhysics(this):null;this.changed();}
+  setInput(input={}){this.input={...input};if(this.physics)this.physics.input=this.input;}
+  getPhysicalPose(){return this.physics?.pose()??null;}
   pose(){return {cell:[...this.cell],normal:[...this.normal],forward:[...this.forward]};}
   emit(type,detail={}){this.onEvent({type,...detail});}
   changed(){this.onChange(this.getSnapshot());}
@@ -28,12 +32,14 @@ export class Game {
     this.occupied=new Set(this.level.cubes.map(key));
     this.cell=[...this.level.start.cell];this.normal=[...this.level.start.normal];this.forward=[...this.level.start.forward];
     this.state='playing';this.time=this.level.time;this.lives=3;this.coins=0;this.keys=0;this.score=0;
-    this.totalKeys=this.level.items.filter(i=>i.type==='key').length;this.collected=new Set();this.cooldown=0;this.lastSecond=Math.ceil(this.time);
+    this.totalKeys=this.level.items.filter(i=>i.type==='key').length;this.collected=new Set();this.cooldown=0;this.lastSecond=Math.ceil(this.time);this.physicsUiElapsed=0;
+    if(this.difficulty==='extreme'){this.physics=new SurfacePhysics(this);this.physics.input=this.input;}
     this.emit('start',{levelIndex:this.levelIndex});this.changed();
   }
   retry(){this.start(this.levelIndex);}
   pause(value=true){if(value&&this.state==='playing'){this.state='paused';this.emit('pause',{paused:true});this.changed();}else if(!value&&this.state==='paused'){this.state='playing';this.emit('pause',{paused:false});this.changed();}}
   move(direction){
+    if(this.difficulty==='extreme')return false;
     if(this.state!=='playing'||this.cooldown>0)return false;
     if(direction==='left'||direction==='right') {
       const from=this.pose();this.forward=direction==='left'?cross(this.normal,this.forward):cross(this.forward,this.normal);
@@ -52,6 +58,7 @@ export class Game {
   }
   jump(){
     if(this.state!=='playing'||this.cooldown>0)return false;
+    if(this.physics){const jumped=this.physics.jump();if(jumped)this.emit('jump');return jumped;}
     const from=this.pose(),landing=add(add(this.cell,this.forward),this.forward),above=add(landing,this.normal);
     if(this.occupied.has(key(add(add(this.cell,this.normal),this.forward)))) {this.emit('blocked',{reason:'wall'});return false;}
     if(!this.occupied.has(key(landing))||this.occupied.has(key(above))){
@@ -83,7 +90,7 @@ export class Game {
     else {
       this.cell=[...this.level.start.cell];this.normal=[...this.level.start.normal];this.forward=[...this.level.start.forward];
       if(reason==='timeout')this.time=Math.max(45,Math.floor(this.level.time*.5));
-      this.cooldown=.65;this.emit('respawn',{to:this.pose(),duration:.65});
+      this.cooldown=this.physics?1.5:.65;if(this.physics)this.physics.reset();this.emit('respawn',{to:this.pose(),duration:this.cooldown});
     }
     this.changed();
   }
@@ -91,7 +98,10 @@ export class Game {
     if(this.state!=='playing')return;
     dt=Math.max(0,Math.min(dt,.25));this.cooldown=Math.max(0,this.cooldown-dt);this.time=Math.max(0,this.time-dt);
     if(this.time<=0){this.damage('timeout');return;}
-    const second=Math.ceil(this.time);if(second!==this.lastSecond){this.lastSecond=second;this.changed();}
+    if(this.physics&&this.cooldown===0)this.physics.update(dt);
+    const second=Math.ceil(this.time),secondChanged=second!==this.lastSecond;this.lastSecond=second;
+    this.physicsUiElapsed=(this.physicsUiElapsed||0)+dt;
+    if(secondChanged||(this.physics&&this.physicsUiElapsed>=.1)){this.physicsUiElapsed=0;this.changed();}
   }
-  getSnapshot(){return {state:this.state,levelIndex:this.levelIndex,cell:[...this.cell],normal:[...this.normal],forward:[...this.forward],time:this.time,lives:this.lives,coins:this.coins,keys:this.keys,totalKeys:this.totalKeys,score:this.score,collected:[...this.collected],cooldown:this.cooldown};}
+  getSnapshot(){const velocity=this.physics?.velocity||[0,0,0],normal=this.physics?.normal||this.normal,vertical=velocity.reduce((sum,v,i)=>sum+v*normal[i],0),speed=Math.hypot(...velocity.map((v,i)=>v-normal[i]*vertical));return {speed,airborne:this.physics?.airborne??false,state:this.state,difficulty:this.difficulty,levelIndex:this.levelIndex,cell:[...this.cell],normal:[...this.normal],forward:[...this.forward],time:this.time,lives:this.lives,coins:this.coins,keys:this.keys,totalKeys:this.totalKeys,score:this.score,collected:[...this.collected],cooldown:this.cooldown};}
 }

@@ -5,6 +5,7 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { BallEffects, portalMaterial } from './effects.js';
 import { LivingEnvironment } from './environment.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
@@ -73,6 +74,10 @@ const SKINS = {
   obsidian: { color: 0x182736, metalness: .91, roughness: .14, transmission: .04, thickness: .7, ior: 1.52, iridescence: .75, accent: 0x7181fb },
   pearl: { color: 0xfff3e3, metalness: .24, roughness: .13, transmission: .12, thickness: .4, ior: 1.45, iridescence: .9, accent: 0xeeb7c5 },
   aurora: { color: 0x77edc8, metalness: .14, roughness: .07, transmission: .88, thickness: .9, ior: 1.52, iridescence: 1, accent: 0x9066fa },
+  inferno: {color:0xff7824,metalness:.32,roughness:.18,transmission:.08,thickness:.5,ior:1.45,iridescence:.3,accent:0xffb523},
+  frost: {color:0x78e9ff,metalness:.15,roughness:.09,transmission:.8,thickness:.7,ior:1.46,iridescence:.5,accent:0xd5ffff},
+  plasma: {color:0xa147f8,metalness:.58,roughness:.14,transmission:.12,thickness:.5,ior:1.5,iridescence:1,accent:0xff7bd5},
+  stardust: {color:0x18265b,metalness:.7,roughness:.1,transmission:.12,thickness:.4,ior:1.5,iridescence:.8,accent:0xffdb65},
   classic: { color: 0xf8ba40, metalness: .1, roughness: .23, transmission: 0, thickness: .5, ior: 1.45, iridescence: 0, accent: 0xe36438 },
 };
 
@@ -114,7 +119,7 @@ export class WorldView {
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = .88;
+    this.renderer.toneMappingExposure = .78;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color('#eadfce');
@@ -126,12 +131,12 @@ export class WorldView {
     const env = new RoomEnvironment();
     this.environment = pmrem.fromScene(env, .04);
     this.scene.environment = this.environment.texture;
-    this.scene.environmentIntensity = .5;
+    this.scene.environmentIntensity = .38;
     env.dispose(); pmrem.dispose();
 
-    this.hemisphere = new THREE.HemisphereLight(0xe3f5ff, 0x776558, .75);
+    this.hemisphere = new THREE.HemisphereLight(0xc1dfff, 0x393060, .8);
     this.scene.add(this.hemisphere);
-    this.sun = new THREE.DirectionalLight(0xffedcc, 2.5);
+    this.sun = new THREE.DirectionalLight(0xffdfad, 2.15);
     this.sun.position.set(-7, 13, 8); this.sun.castShadow = true;
     this.sun.shadow.mapSize.set(1536, 1536);
     Object.assign(this.sun.shadow.camera, { left: -13, right: 13, top: 13, bottom: -13, near: 1, far: 65 });
@@ -148,6 +153,11 @@ export class WorldView {
       material(0xe3d5bf, { map: this.stoneMap, bumpMap: this.stoneMap, bumpScale: .026 }),
       material(0xe9b69a, { map: this.stoneMap, bumpMap: this.stoneMap, bumpScale: .02 }),
     ];
+    this.blockMaterials.forEach(m=>{m.onBeforeCompile=shader=>{
+      shader.vertexShader='varying vec3 vBlock;\n'+shader.vertexShader.replace('#include <begin_vertex>','#include <begin_vertex>\nvBlock=position;');
+      shader.fragmentShader='varying vec3 vBlock;\n'+shader.fragmentShader.replace('#include <color_fragment>',`#include <color_fragment>
+      vec3 q=abs(vBlock);float second=max(min(q.x,q.y),min(max(q.x,q.y),q.z));float edge=smoothstep(.44,.488,second);diffuseColor.rgb*=mix(1.,.58,edge);`);
+    };});
     this.levelGroup = new THREE.Group(); this.scene.add(this.levelGroup);
     this.itemGroup = new THREE.Group(); this.scene.add(this.itemGroup);
     this.decorGroup = new THREE.Group(); this.scene.add(this.decorGroup);
@@ -155,6 +165,7 @@ export class WorldView {
     this.livingEnvironment = new LivingEnvironment(this.scene);
     this.floor.visible = false;
     this._makeBall();
+    this.effects = new BallEffects(this.scene);
     this.playerPosition = new THREE.Vector3(0, .82, 0);
     this.fromPosition = this.playerPosition.clone(); this.targetPosition = this.playerPosition.clone();
     this.playerNormal = UP.clone(); this.targetNormal = UP.clone();
@@ -164,7 +175,7 @@ export class WorldView {
     this.cameraFrameTarget = new THREE.Quaternion();
     this.cameraAnchor = new THREE.Vector3();
     this.cameraTurnProgress = 1;
-    this.transition = 1; this.jump = false;
+    this.moveProgress = 1; this.jump = false;
     this.fromNormal = UP.clone();
     this.playerCell = new THREE.Vector3();
     this.cornerCell = new THREE.Vector3();
@@ -184,6 +195,19 @@ export class WorldView {
       clearcoat: .15, clearcoatRoughness: .025, envMapIntensity: .8,
       attenuationColor: new THREE.Color(0xc6f3ff), attenuationDistance: 1.3,
     }));
+    this.skinUniforms={uSkin:{value:0},uSkinTime:{value:0}};
+    this.shell.material.onBeforeCompile=shader=>{
+      Object.assign(shader.uniforms,this.skinUniforms);
+      shader.vertexShader='varying vec3 vShell;\n'+shader.vertexShader.replace('#include <begin_vertex>','#include <begin_vertex>\nvShell=position;');
+      shader.fragmentShader='uniform float uSkin; uniform float uSkinTime; varying vec3 vShell;\n'+shader.fragmentShader.replace('#include <color_fragment>',`#include <color_fragment>
+        if(uSkin>.5){vec3 p=vShell*18.;float vein=sin(p.x+sin(p.y*1.3))*sin(p.z+sin(p.x*.8));
+        float cracks=pow(1.-abs(vein),10.);
+        if(uSkin<1.5)diffuseColor.rgb=mix(vec3(.16,.016,.005),vec3(1.,.35,.015),cracks*.9+.1);
+        else if(uSkin<2.5)diffuseColor.rgb=mix(diffuseColor.rgb,vec3(.8,1.,1.),cracks*.65);
+        else if(uSkin<3.5)diffuseColor.rgb=mix(vec3(.12,.014,.3),vec3(.8,.15,.8),pow(abs(sin(p.y+uSkinTime*2.+sin(p.x))),8.));
+        else diffuseColor.rgb+=vec3(1.,.75,.3)*pow(abs(sin(p.x*3.)*sin(p.y*4.)*sin(p.z*3.)),24.);
+        }`);
+    };
     this.shell.castShadow = true; this.ball.add(this.shell);
     this.interior = new THREE.Group(); this.ball.add(this.interior);
     const ribbon = new THREE.Mesh(new THREE.TorusGeometry(.195, .018, 12, 72, Math.PI * 1.56),
@@ -242,15 +266,15 @@ export class WorldView {
   setLevel(level) {
     this.level = level;
     const palettes = [
-      { sky: 0xf4e6d2, blocks: [0xf5eee1, 0xe3d5bf, 0xe9b69a], ground: 0xe9dbc7, sun: 0xffedcc },
-      { sky: 0xcadfe0, blocks: [0xe5f0e9, 0xb7d6ce, 0x83b9b5], ground: 0xb2cbd0, sun: 0xf5f3df },
-      { sky: 0x9b9bb2, blocks: [0x6a687a, 0x55536b, 0xb8887b], ground: 0x85859b, sun: 0xffd3b9 },
-      { sky: 0xdedceb, blocks: [0xf1eef9, 0xd2cadf, 0xc5b0d8], ground: 0xc7c4da, sun: 0xfff1e7 },
+      { sky: 0xf4e6d2, blocks: [0xf3c36d, 0xd89048, 0xe56c4d], ground: 0xe9dbc7, sun: 0xffedcc },
+      { sky: 0xcadfe0, blocks: [0x5ed9cf, 0x2fa79e, 0x4b8ecd], ground: 0xb2cbd0, sun: 0xf5f3df },
+      { sky: 0x9b9bb2, blocks: [0x575080, 0x36314e, 0xd77951], ground: 0x85859b, sun: 0xffd3b9 },
+      { sky: 0xdedceb, blocks: [0x9b86e1, 0x7661bb, 0xd87ec9], ground: 0xc7c4da, sun: 0xfff1e7 },
     ];
     const palette = palettes[level.worldIndex || 0];
     this.scene.background.setHex(palette.sky); this.scene.fog.color.setHex(palette.sky);
     this.floor.material.color.setHex(palette.ground); this.sun.color.setHex(palette.sun);
-    this.blockMaterials.forEach((m, i) => m.color.setHex(palette.blocks[i]));
+    this.blockMaterials.forEach((m, i) => {m.color.setHex(palette.blocks[i]);m.emissive.setHex((level.emissive || level.id>24) ? [0x197caa,0x7030a7,0x20a975][i] : 0);m.emissiveIntensity=(level.emissive || level.id>24) ? .32 : 0;});
     this._clearGroup(this.levelGroup); this._clearGroup(this.itemGroup); this._clearGroup(this.decorGroup);
     this.items = []; this.collected = new Set();
     const cubes = level.cubes || level.blocks || [];
@@ -324,14 +348,10 @@ export class WorldView {
       }
       animated.position.y = .42;
     } else if (type === 'exit') {
-      const base = new THREE.Mesh(new THREE.CylinderGeometry(.34, .4, .06, 48), material(0x75958f, { metalness: .7, roughness: .23 })); base.position.y = .03; root.add(base);
-      const portal = new THREE.Mesh(new THREE.TorusGeometry(.29, .035, 14, 64), new THREE.MeshStandardMaterial({ color: 0x8affed, emissive: 0x39d8bb, emissiveIntensity: 1.7, metalness: .3, roughness: .2 }));
-      portal.position.y = .4; animated.add(portal);
-      const inside = new THREE.Mesh(new THREE.CircleGeometry(.255, 48), new THREE.MeshBasicMaterial({ color: 0x7ce9da, transparent: true, opacity: .13, side: THREE.DoubleSide, depthWrite: false })); inside.position.y = .4; animated.add(inside);
-      for (let i = 0; i < 7; i++) {
-        const shard = new THREE.Mesh(new THREE.OctahedronGeometry(.025), material(0xb8ffee, { emissive: 0x59c4ae, emissiveIntensity: 1.3 }));
-        const a = i / 7 * Math.PI * 2; shard.position.set(Math.cos(a) * .38, .4 + Math.sin(a) * .38, 0); animated.add(shard);
-      }
+      const rim = new THREE.Mesh(new THREE.TorusGeometry(.43,.072,8,48), material(0x403667,{metalness:.75,roughness:.25,emissive:0x39d8bb,emissiveIntensity:.5}));rim.position.y=.53;animated.add(rim);
+      const window = new THREE.Mesh(new THREE.CircleGeometry(.415,64),portalMaterial());window.position.set(0,.53,.012);animated.add(window);
+      const runes = new THREE.InstancedMesh(new THREE.OctahedronGeometry(.057),material(0x9affed,{emissive:0x3beac4,emissiveIntensity:1.2}),12);const matrix=new THREE.Matrix4();for(let i=0;i<12;i++){const a=i/12*Math.PI*2;matrix.makeRotationZ(a);matrix.setPosition(Math.cos(a)*.53,.53+Math.sin(a)*.53,0);runes.setMatrixAt(i,matrix);}animated.add(runes);
+      const foot=new THREE.Mesh(new RoundedBoxGeometry(.7,.13,.34,2,.045),material(0x393154,{metalness:.7}));foot.position.y=.065;root.add(foot);
     } else if (type === 'lava') {
       const plate = new THREE.Mesh(new RoundedBoxGeometry(.94, .07, .94, 2, .02), material(0x251c1c, {metalness:.6,roughness:.45}));
       plate.position.y=.025;root.add(plate);
@@ -423,7 +443,8 @@ export class WorldView {
       ring.material.color.setHex(unlocked ? 0x8affed : 0xb5a186);
       ring.material.emissive.setHex(unlocked ? 0x39d8bb : 0x856b43);
       ring.material.emissiveIntensity = unlocked ? 1.7 : .12;
-      entry.animated.children[1].material.opacity = unlocked ? .13 : .03;
+      entry.animated.children[1].material.uniforms.uUnlocked.value = unlocked ? 1 : 0;
+      entry.unlocked = unlocked;
     }
   }
 
@@ -441,9 +462,15 @@ export class WorldView {
     this.interior.visible = skin.transmission > .4;
     this.interior.children.slice(0, 2).forEach(o => o.material.color.setHex(accent));
     this.classicBand.visible = false;
+    this.effects?.setSkin(this.skinId);
+    this.shell.material.emissive.setHex(this.skinId === 'stardust' ? 0x272d88 : ['inferno','plasma'].includes(this.skinId) ? accent : 0);
+    this.shell.material.emissiveIntensity = .22;
+    this.skinUniforms.uSkin.value=Math.max(0,['glacier','inferno','frost','plasma','stardust'].indexOf(this.skinId));
   }
 
   setPlayer(cell, normal, forward, { jump = false, instant = false, duration, fall = false } = {}) {
+    this.physical = false;
+    if (instant) { this.sequence = null; this.ball.visible = true; this.effects?.reset(); }
     this.fromPosition.copy(this.playerPosition);
     this.fromNormal.copy(this.targetNormal);
     this.targetNormal.copy(v3(normal, [0, 1, 0])).normalize();
@@ -466,7 +493,7 @@ export class WorldView {
       this.cameraTurnDuration = Math.max(duration || .24, this.fromNormal.dot(this.targetNormal) < .99 ? .55 : .38);
     }
     this.targetPosition.copy(facePosition(cell, this.targetNormal));
-    this.transition = instant ? 1 : 0;
+    this.moveProgress = instant ? 1 : 0;
     this.moveDuration = duration || (jump ? .48 : .24);
     this.fall = fall;
     this.jump = jump;
@@ -477,6 +504,22 @@ export class WorldView {
       this.cameraAnchor.copy(this.playerPosition);
       this.snapCamera = true;
     }
+  }
+
+  setPhysicalPose({position,normal,forward,grounded=true}) {
+    this.physical=true;this.physicalGrounded=grounded;
+    this.targetPosition.copy(v3(position));this.targetNormal.copy(v3(normal,[0,1,0])).normalize();this.playerForward.copy(v3(forward,[0,0,-1])).normalize();
+    const right=new THREE.Vector3().crossVectors(this.playerForward,this.targetNormal).normalize();
+    this.cameraFrameTarget.setFromRotationMatrix(new THREE.Matrix4().makeBasis(right,this.targetNormal,this.playerForward.clone().negate()));
+  }
+
+  transition(kind, options={}) {
+    const duration=kind==='won'?1.65:1.4;
+    const exit=this.items.find(e=>e.item.type==='exit');
+    const target=exit ? exit.root.localToWorld(new THREE.Vector3(0,.53,0)) : this.playerPosition.clone();
+    this.sequence={kind,duration,time:0,started:performance.now(),origin:this.ball.position.clone(),target,normal:this.targetNormal.clone()};
+    if(kind!=='won')this.effects.burst(this.playerPosition,this.targetNormal,140);
+    return duration;
   }
 
   setMode(mode) {
@@ -554,11 +597,13 @@ export class WorldView {
 
   update(dt, elapsed) {
     dt = clamp(dt || 0, 0, .07); this.elapsed = elapsed ?? this.elapsed + dt;
+    this.skinUniforms.uSkinTime.value=this.elapsed;
     const oldPosition = this.scratch.old.copy(this.playerPosition);
-    this.transition = Math.min(1, this.transition + dt / (this.moveDuration || .24));
-    const t = smooth(this.transition);
-    this.playerPosition.lerpVectors(this.fromPosition, this.targetPosition, t);
-    if (this.cornerMove && this.transition < 1) {
+    this.moveProgress = Math.min(1, this.moveProgress + dt / (this.moveDuration || .24));
+    const t = smooth(this.moveProgress);
+    if(this.physical) this.playerPosition.copy(this.targetPosition);
+    else this.playerPosition.lerpVectors(this.fromPosition, this.targetPosition, t);
+    if (!this.physical && this.cornerMove && this.moveProgress < 1) {
       const r = .31, arcLength = Math.PI * r / 2, distance = t * (1 + arcLength);
       if (distance < .5) this.playerPosition.copy(this.fromPosition).addScaledVector(this.targetNormal, distance);
       else if (distance < .5 + arcLength) {
@@ -566,8 +611,8 @@ export class WorldView {
         this.playerPosition.copy(this.cornerCell).addScaledVector(this.fromNormal, .5 + Math.cos(angle) * r).addScaledVector(this.targetNormal, .5 + Math.sin(angle) * r);
       } else this.playerPosition.copy(this.targetPosition).addScaledVector(this.fromNormal, 1 + arcLength - distance);
     }
-    if (this.jump) this.playerPosition.addScaledVector(this.targetNormal, Math.sin(this.transition * Math.PI) * .75);
-    if (this.fall) this.playerPosition.addScaledVector(this.targetNormal, -Math.pow(this.transition, 3) * 2.5);
+    if (!this.physical && this.jump) this.playerPosition.addScaledVector(this.targetNormal, Math.sin(this.moveProgress * Math.PI) * .75);
+    if (!this.physical && this.fall) this.playerPosition.addScaledVector(this.targetNormal, -Math.pow(this.moveProgress, 3) * 2.5);
     this.playerNormal.lerp(this.targetNormal, 1 - Math.exp(-dt * 13)).normalize();
     const movement = this.scratch.movement.copy(this.playerPosition).sub(oldPosition);
     if (movement.lengthSq() > .000001) {
@@ -580,9 +625,21 @@ export class WorldView {
       this.ball.position.addScaledVector(this.targetNormal, Math.sin(this.elapsed * 1.5) * .025 + .17);
       this.ball.rotateY(dt * .17);
     }
+    if(this.sequence){
+      const a=this.sequence;a.time=(performance.now()-a.started)/1000;const p=clamp(a.time/a.duration,0,1);
+      if(a.kind==='won'){
+        this.ball.position.lerpVectors(a.origin,a.target,p*p);const swirl=Math.sin(p*Math.PI)*.55;
+        this.ball.position.x+=Math.sin(p*22)*swirl;this.ball.position.z+=Math.cos(p*22)*swirl;this.ball.position.y+=Math.sin(p*Math.PI)*.55;
+        this.ball.scale.setScalar(Math.max(.001,Math.pow(1-p,1.6)));this.ball.rotateY(dt*18);
+      }else if(a.kind==='fall'){this.ball.position.copy(a.origin).addScaledVector(a.normal,-p*p*8);this.ball.scale.setScalar(1-p*.7);}
+      else {this.ball.scale.setScalar(Math.max(.001,1-p));this.ball.position.copy(a.origin).addScaledVector(a.normal,Math.sin(p*Math.PI)*.35);}
+      if(p>=1)this.ball.visible=false;
+    }
+    this.effects.update(dt,this.ball.position,this.targetNormal,!this.sequence && (this.physical ? this.physicalGrounded : !this.jump || this.moveProgress>=1));
+    this.contact.visible=!this.sequence;
     this.contact.position.copy(this.targetPosition).addScaledVector(this.targetNormal, -.303);
     this.contact.quaternion.setFromUnitVectors(FRONT, this.targetNormal);
-    this.contact.material.opacity = this.jump && this.transition < 1 ? .10 : .24;
+    this.contact.material.opacity = this.jump && this.moveProgress < 1 ? .10 : .24;
     for (const entry of this.items) {
       const { item, animated, root, index, baseY, collectedAt } = entry;
       if (collectedAt !== null) {
@@ -595,6 +652,9 @@ export class WorldView {
       if (item.type === 'lava') {
         animated.children[0].material.uniforms.uTime.value=this.elapsed;
         for (let i = 1; i < animated.children.length; i++) animated.children[i].scale.y = .55 + (Math.sin(this.elapsed * 7 + (i - 1) * 3) * .5 + .5) * .95;
+      } else if (item.type === 'exit') {
+        animated.children[1].material.uniforms.uTime.value=this.elapsed;
+        animated.children[2].rotation.z=Math.sin(this.elapsed*.6)*.08;
       } else if (item.type !== 'spike') {
         animated.position.y = baseY + Math.sin(this.elapsed * 2 + index * .7) * .035;
         animated.rotation.y = this.elapsed * (item.type === 'exit' ? .4 : 1.2) + index;
@@ -614,7 +674,8 @@ export class WorldView {
       cameraUp.copy(UP);
     } else {
       this.cameraTurnProgress = Math.min(1, this.cameraTurnProgress + dt / (this.cameraTurnDuration || .55));
-      this.cameraFrame.slerpQuaternions(this.cameraFrameFrom, this.cameraFrameTarget, smooth(this.cameraTurnProgress));
+      if(this.physical) this.cameraFrame.slerp(this.cameraFrameTarget,1-Math.exp(-dt*4));
+      else this.cameraFrame.slerpQuaternions(this.cameraFrameFrom, this.cameraFrameTarget, smooth(this.cameraTurnProgress));
       this.cameraAnchor.lerp(this.playerPosition, this.snapCamera ? 1 : 1 - Math.exp(-dt * 5));
       target.copy(this.cameraAnchor);
       desiredPosition.copy(target).add(this.scratch.offset.set(.8, 4.8, 6.5).applyQuaternion(this.cameraFrame));
@@ -633,6 +694,7 @@ export class WorldView {
   }
 
   dispose() {
+    this.effects.dispose();
     this.livingEnvironment.dispose();
     this._clearGroup(this.levelGroup); this._clearGroup(this.itemGroup); this._clearGroup(this.decorGroup);
     this.scene.traverse(o => { o.geometry?.dispose(); if (o.material) for (const m of Array.isArray(o.material) ? o.material : [o.material]) m.dispose(); });

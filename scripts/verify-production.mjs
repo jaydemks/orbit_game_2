@@ -22,7 +22,7 @@ try {
   page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
   page.on('request',r=>{if(!r.url().startsWith('http://127.0.0.1:4179/')&&!r.url().startsWith('data:'))external.push(r.url());});
   await page.goto('http://127.0.0.1:4179/orbit/');
-  await page.getByRole('button',{name:'Start your journey'}).click();
+  await page.getByRole('button',{name:'Start rolling'}).click();
   await page.locator('#boot').waitFor({state:'hidden'});
   await page.keyboard.press('ArrowUp');await page.waitForTimeout(500);
   assert.equal(await page.locator('#interface').getAttribute('data-screen'),'playing');

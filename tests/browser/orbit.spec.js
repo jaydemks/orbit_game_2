@@ -20,11 +20,11 @@ function firstRoute() {
 test('menu, tutorial, worlds, keyboard win, wallet, skins and reload',async({page})=>{
   const errors=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
   await page.goto('/?test');await page.waitForFunction(()=>window.__ORBIT__?.view);
-  await expect(page.getByRole('heading',{name:'Change your point of view.'})).toBeVisible();
+  await expect(page.getByRole('heading',{name:/Small ball/})).toBeVisible();
   await page.getByRole('button',{name:'How to play'}).click();await expect(page.getByRole('dialog')).toBeVisible();
   await page.getByRole('button',{name:'Got it'}).click();
   await page.getByRole('button',{name:'WORLDS',exact:true}).click();
-  await expect(page.locator('.level-card')).toHaveCount(24);await expect(page.locator('.level-card:disabled')).toHaveCount(23);
+  await expect(page.locator('.level-card')).toHaveCount(LEVELS.length);await expect(page.locator('.level-card:disabled')).toHaveCount(LEVELS.length-1);
   await page.locator('.level-card').first().click();
   await expect(page.locator('#boot')).toBeHidden();
   await page.keyboard.press('Escape');await expect(page.getByRole('dialog')).toBeVisible();
@@ -55,7 +55,7 @@ test('mobile touch, jump buffering, settings and no horizontal overflow',async({
   await page.getByRole('button',{name:'Balanced',exact:true}).click();
   expect(await page.evaluate(()=>window.__ORBIT__.progress.quality)).toBe('balanced');
   await page.getByRole('button',{name:'Done'}).click();
-  await page.getByRole('button',{name:'Start your journey'}).click();
+  await page.getByRole('button',{name:'Start rolling'}).click();
   await page.getByRole('button',{name:'Forward',exact:true}).click();
   expect(await page.evaluate(()=>window.__ORBIT__.game.cell)).toEqual([0,0,-1]);
   await page.getByRole('button',{name:'JUMP',exact:true}).click();
@@ -123,7 +123,7 @@ test('loading progress gates gameplay and batches keep heavy worlds affordable',
     const view=window.__ORBIT__.view,prepare=view.prepare.bind(view);
     view.prepare=async progress=>{await new Promise(resolve=>window.releasePreparation=resolve);return prepare(progress);};
   });
-  await page.getByRole('button',{name:'Start your journey'}).click();
+  await page.getByRole('button',{name:'Start rolling'}).click();
   await page.waitForFunction(()=>window.releasePreparation);
   await expect(page.locator('#load-progress')).toBeVisible();
   await expect(page.locator('#interface')).toHaveAttribute('inert','');
