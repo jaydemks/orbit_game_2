@@ -6,13 +6,23 @@ on:
         description: Moderation action
         required: true
         type: choice
-        options: [ban, unban, force_alias, remove_alias, allow_alias, blacklist_term, unblacklist_term]
+        options: [remove_run, ban, unban, force_alias, remove_alias, allow_alias, blacklist_term, unblacklist_term]
       user_id:
         description: Numeric GitHub user ID (required for user/alias actions)
         required: false
         type: string
       value:
         description: Safe replacement alias or term to blacklist
+        required: false
+        type: string
+      difficulty:
+        description: Difficulty of a run being removed
+        required: false
+        default: easy
+        type: choice
+        options: [easy, extreme]
+      level_number:
+        description: Level number 1–40 for remove_run
         required: false
         type: string
 permissions:
@@ -42,4 +52,6 @@ jobs:
           MODERATION_ACTION: ${{ inputs.action }}
           MODERATION_USER_ID: ${{ inputs.user_id }}
           MODERATION_VALUE: ${{ inputs.value }}
+          MODERATION_DIFFICULTY: ${{ inputs.difficulty }}
+          MODERATION_LEVEL: ${{ inputs.level_number }}
         run: node scripts/moderate-rankings.mjs

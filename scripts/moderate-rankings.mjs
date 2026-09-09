@@ -2,12 +2,18 @@ import { pathToFileURL } from 'node:url';
 import { emptyModeration,fingerprint,isFingerprintBlocked } from './moderation-policy.mjs';
 import { normalizeName,validateAlias } from '../src/name-policy.js';
 
-export function applyModeration(board,policy,action,userId,value) {
+export function applyModeration(board,policy,action,userId,value,options={}) {
   const nextBoard={...board,runs:Array.isArray(board.runs)?board.runs.map(run=>({...run})):[]};
   const nextPolicy={...emptyModeration(),...policy,bannedUserIds:[...(policy.bannedUserIds||[])].map(String),forcedAliases:{...(policy.forcedAliases||{})},blockedAliasFingerprints:[...(policy.blockedAliasFingerprints||[])]};
   const id=String(userId||'').trim();
-  if(['ban','unban','force_alias','remove_alias','allow_alias'].includes(action)&&!/^[0-9]{1,20}$/.test(id))throw Error('A numeric GitHub user ID is required.');
-  if(action==='ban'){
+  if(['remove_run','ban','unban','force_alias','remove_alias','allow_alias'].includes(action)&&!/^[0-9]{1,20}$/.test(id))throw Error('A numeric GitHub user ID is required.');
+  if(action==='remove_run'){
+    const difficulty=options.difficulty==='extreme'?'extreme':'easy',level=Number(options.level);
+    if(!Number.isSafeInteger(level)||level<1||level>40)throw Error('A level number from 1 to 40 is required.');
+    const before=nextBoard.runs.length;
+    nextBoard.runs=nextBoard.runs.filter(run=>!(String(run.userId)===id&&run.difficulty===difficulty&&run.level===level-1));
+    if(nextBoard.runs.length===before)throw Error(`No ${difficulty} level ${level} run exists for this user.`);
+  } else if(action==='ban'){
     if(!nextPolicy.bannedUserIds.includes(id))nextPolicy.bannedUserIds.push(id);
     delete nextPolicy.forcedAliases[id];nextBoard.runs=nextBoard.runs.filter(run=>String(run.userId)!==id);
   } else if(action==='unban')nextPolicy.bannedUserIds=nextPolicy.bannedUserIds.filter(entry=>entry!==id);
@@ -47,7 +53,7 @@ async function writeJSON(path,data,sha,message) {
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
   if(process.env.GITHUB_REPOSITORY!=='jaydemks/orbit_game_2')throw Error('Unexpected repository.');
   const boardFile=await readJSON('leaderboard.json',{updatedAt:null,runs:[]}),policyFile=await readJSON('moderation.json',emptyModeration());
-  const result=applyModeration(boardFile.data,policyFile.data,process.env.MODERATION_ACTION,process.env.MODERATION_USER_ID,process.env.MODERATION_VALUE||'');
+  const result=applyModeration(boardFile.data,policyFile.data,process.env.MODERATION_ACTION,process.env.MODERATION_USER_ID,process.env.MODERATION_VALUE||'',{difficulty:process.env.MODERATION_DIFFICULTY,level:process.env.MODERATION_LEVEL});
   await writeJSON('moderation.json',result.policy,policyFile.sha,`Moderation: ${process.env.MODERATION_ACTION}`);
   await writeJSON('leaderboard.json',result.board,boardFile.sha,`Apply ranking moderation: ${process.env.MODERATION_ACTION}`);
   console.log(`Applied ${process.env.MODERATION_ACTION}; ${result.board.runs.length} ranked records remain.`);

@@ -16,6 +16,13 @@ test('owner can ban a GitHub identity or replace and remove its nickname',()=>{
   assert.equal(moderateIdentity({id:7,alias:''},state.policy).ok,false);
 });
 
+test('owner can remove one run without removing the player',()=>{
+  const runs=[...board.runs,{userId:7,username:'player',alias:'Bright Star',score:30,level:1,difficulty:'extreme'}];
+  const state=applyModeration({runs},emptyModeration(),'remove_run',7,'',{difficulty:'extreme',level:'2'});
+  assert.equal(state.board.runs.some(run=>run.userId===7&&run.difficulty==='extreme'&&run.level===1),false);
+  assert.equal(state.board.runs.some(run=>run.userId===7),true);
+});
+
 test('a blacklisted term is hashed, removed from existing names and blocked in future names',()=>{
   const state=applyModeration(board,emptyModeration(),'blacklist_term','', 'bright');
   assert.equal(state.board.runs[0].alias,'');

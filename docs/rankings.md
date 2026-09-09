@@ -16,6 +16,7 @@ Open **Actions → Moderate ORBIT 2 rankings → Run workflow**. Choose an actio
 
 | Action | Result |
 | --- | --- |
+| `remove_run` | Remove one result by GitHub user ID, difficulty and level number while preserving the player's other records. |
 | `ban` / `unban` | Remove all records for an account and block future submissions, or restore eligibility. |
 | `force_alias` | Replace a player's nickname everywhere and enforce the safe replacement on later runs. |
 | `remove_alias` | Remove the nickname and show the verified GitHub username instead. |
