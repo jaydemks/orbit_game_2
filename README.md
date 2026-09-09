@@ -16,7 +16,7 @@ ORBIT 2 is a separate release with its own saves. The original game stays availa
 - **Easy or Extreme:** classic precise steps by default, or physical acceleration, inertia, braking and speed-dependent jumps. Slow down to wrap around edges; excessive speed can send you into the void.
 - **Ten earnable spheres:** glass, pearl and crystal join fire, ice, plasma and stardust. Fire and ice leave fading surface trails.
 - **Sentinels from level 17:** watch their warning zones, dodge or jump their pulse. Glass shatters; the Classic ball deflates. Eight new expeditions add larger circuits, elevated bridges and four-key routes.
-- **Optional verified rankings:** play without an account, or voluntarily submit a replay through your GitHub identity. An optional moderated nickname still links to the verified GitHub profile. The home menu features the real Top Explorer as soon as the first run is approved. [How rankings and owner moderation work](docs/rankings.md).
+- **Optional verified rankings:** play without an account, or voluntarily submit a replay through your GitHub identity. Transparent scoring combines level progress, exploration, normalized remaining time and surviving lives, with a 1.35× Extreme multiplier. The home menu features the real Top Explorer as soon as the first run is approved. [How rankings, scoring and owner moderation work](docs/rankings.md).
 - Fire tongues, embers, soft smoke, ice fragments and mist use shared particle pools. Readable English menus, mobile controls, shader warm-up and adaptive resolution.
 - Separate **Music** and **Sound effects** volume sliders; mute either without losing the other.
 

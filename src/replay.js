@@ -1,7 +1,8 @@
 import { Game } from './game.js';
 import { LEVELS } from './levels.js';
 
-export const RULESET = 'orbit2-2026-09-expeditions';
+export const RULESET = 'orbit2-2026-09-score-v2';
+const COMPATIBLE_RULESETS = new Set([RULESET,'orbit2-2026-09-expeditions']);
 export const STEP = 1 / 60;
 export const MAX_TICKS = 72000;
 export const MAX_EVENTS = 3500;
@@ -39,7 +40,7 @@ export class RunRecorder {
 }
 
 export function validateReplay(replay) {
-  if(!replay||replay.version!==RULESET)throw Error('This run uses an older ruleset. Reload the game and try again.');
+  if(!replay||!COMPATIBLE_RULESETS.has(replay.version))throw Error('This run uses an incompatible ruleset. Reload the game and try again.');
   if(!Number.isInteger(replay.level)||replay.level<0||replay.level>=LEVELS.length)throw Error('Invalid level.');
   if(!['easy','extreme'].includes(replay.difficulty))throw Error('Invalid difficulty.');
   if(!Number.isInteger(replay.ticks)||replay.ticks<0||replay.ticks>MAX_TICKS)throw Error('Invalid duration.');
@@ -66,7 +67,7 @@ export function validateReplay(replay) {
   }
   if(game.state!=='won'||game.lives<1||game.keys!==game.totalKeys)throw Error('Replay does not complete this level.');
   const snapshot=game.getSnapshot();
-  return {level:replay.level,difficulty:replay.difficulty,score:snapshot.score,lives:snapshot.lives,time:Math.round(snapshot.time*100)/100,ticks:replay.ticks,version:RULESET};
+  return {level:replay.level,difficulty:replay.difficulty,score:snapshot.score,scoreBreakdown:snapshot.scoreBreakdown,lives:snapshot.lives,time:Math.round(snapshot.time*100)/100,ticks:replay.ticks,version:RULESET};
 }
 
 export function parseSubmission(body) {

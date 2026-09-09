@@ -1,6 +1,7 @@
 import { LEVELS } from './levels.js';
 import { SurfacePhysics } from './physics.js';
 import { EnemySimulation } from './enemies.js';
+import { calculateScore } from './scoring.js';
 
 const add=(a,b)=>a.map((v,i)=>v+b[i]);
 const neg=a=>a.map(v=>-v);
@@ -20,7 +21,7 @@ export class Game {
   constructor({onChange=()=>{},onEvent=()=>{}}={}) {
     this.onChange=onChange;this.onEvent=onEvent;
     this.difficulty='easy';this.physics=null;this.input={};this.state='menu';this.levelIndex=0;this.cell=[0,0,0];this.normal=[0,1,0];this.forward=[0,0,-1];
-    this.time=0;this.lives=3;this.coins=0;this.keys=0;this.totalKeys=0;this.score=0;this.collected=new Set();this.cooldown=0;
+    this.time=0;this.lives=3;this.coins=0;this.keys=0;this.totalKeys=0;this.score=0;this.scoreBreakdown=null;this.collected=new Set();this.cooldown=0;
   }
   setDifficulty(value){this.difficulty=value==='extreme'?'extreme':'easy';this.physics=this.difficulty==='extreme'?new SurfacePhysics(this):null;this.changed();}
   setInput(input={}){this.input={...input};if(this.physics)this.physics.input=this.input;}
@@ -42,7 +43,7 @@ export class Game {
     this.levelIndex=Math.max(0,Math.min(LEVELS.length-1,index));this.level=LEVELS[this.levelIndex];
     this.occupied=new Set(this.level.cubes.map(key));
     this.cell=[...this.level.start.cell];this.normal=[...this.level.start.normal];this.forward=[...this.level.start.forward];
-    this.state='playing';this.time=this.level.time;this.lives=3;this.coins=0;this.keys=0;this.score=0;
+    this.state='playing';this.time=this.level.time;this.lives=3;this.coins=0;this.keys=0;this.score=0;this.scoreBreakdown=null;
     this.totalKeys=this.level.items.filter(i=>i.type==='key').length;this.collected=new Set();this.cooldown=0;this.lastSecond=Math.ceil(this.time);this.physicsUiElapsed=0;
     if(this.difficulty==='extreme'){this.physics=new SurfacePhysics(this);this.physics.input=this.input;}
     this.enemyGrace=1.5;this.easyJump=null;this.enemies=new EnemySimulation(this);
@@ -86,8 +87,11 @@ export class Game {
       if(item.type==='spike'||item.type==='lava'){this.damage(item.type==='lava'?'burn':'spike');return;}
       if(item.type==='exit'){
         if(this.keys<this.totalKeys){this.emit('blocked',{reason:'keys',remaining:this.totalKeys-this.keys});continue;}
-        const timeBonus=Math.floor(this.time)*5;this.score+=timeBonus;this.state='won';
-        this.emit('won',{levelIndex:this.levelIndex,coins:this.coins,score:this.score,timeBonus});return;
+        const items={coin:0,key:0,fruit:0,time:0};
+        for(const collected of this.collected){const type=this.level.items[collected]?.type;if(type in items)items[type]++;}
+        this.scoreBreakdown=calculateScore({level:this.levelIndex,difficulty:this.difficulty,time:this.time,baseTime:this.level.time,lives:this.lives,items});
+        this.score=this.scoreBreakdown.total;this.state='won';
+        this.emit('won',{levelIndex:this.levelIndex,coins:this.coins,score:this.score,scoreBreakdown:this.scoreBreakdown});return;
       }
       this.collected.add(index);
       if(item.type==='coin'){this.coins++;this.score+=100;}
@@ -119,5 +123,5 @@ export class Game {
     this.physicsUiElapsed=(this.physicsUiElapsed||0)+dt;
     if(secondChanged||(this.physics&&this.physicsUiElapsed>=.1)){this.physicsUiElapsed=0;this.changed();}
   }
-  getSnapshot(){const velocity=this.physics?.velocity||[0,0,0],normal=this.physics?.normal||this.normal,vertical=velocity.reduce((sum,v,i)=>sum+v*normal[i],0),speed=Math.hypot(...velocity.map((v,i)=>v-normal[i]*vertical));return {speed,airborne:this.physics?.airborne??false,state:this.state,difficulty:this.difficulty,levelIndex:this.levelIndex,cell:[...this.cell],normal:[...this.normal],forward:[...this.forward],time:this.time,lives:this.lives,coins:this.coins,keys:this.keys,totalKeys:this.totalKeys,score:this.score,collected:[...this.collected],cooldown:this.cooldown};}
+  getSnapshot(){const velocity=this.physics?.velocity||[0,0,0],normal=this.physics?.normal||this.normal,vertical=velocity.reduce((sum,v,i)=>sum+v*normal[i],0),speed=Math.hypot(...velocity.map((v,i)=>v-normal[i]*vertical));return {speed,airborne:this.physics?.airborne??false,state:this.state,difficulty:this.difficulty,levelIndex:this.levelIndex,cell:[...this.cell],normal:[...this.normal],forward:[...this.forward],time:this.time,lives:this.lives,coins:this.coins,keys:this.keys,totalKeys:this.totalKeys,score:this.score,scoreBreakdown:this.scoreBreakdown,collected:[...this.collected],cooldown:this.cooldown};}
 }

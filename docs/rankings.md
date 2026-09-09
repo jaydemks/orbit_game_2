@@ -8,6 +8,22 @@ Opening the prepared issue starts validation automatically. The workflow accepts
 
 Only the best score for each account, level and difficulty counts. The leaderboard sums these personal bests, with Easy and Extreme separated. Replaying easy levels cannot farm ranking points. Tied personal scores prefer fewer ticks; tied campaign totals use completed levels and then GitHub username for stable ordering. Records include their ruleset version; future incompatible gameplay changes need a new version and ranking season.
 
+## Score formula
+
+Each completed level is scored from independently verified game state:
+
+| Component | Points | Purpose |
+| --- | ---: | --- |
+| Completion | `1,000 + 50 × (level − 1)` | Makes campaign progress and later complexity valuable. Level 1 awards 1,000; level 40 awards 2,950. |
+| Exploration | Coin 100, required key 250, fruit 500, clock 50 | Rewards complete routes and optional discoveries. |
+| Pace | Up to 1,500 | Uses the percentage of available time remaining, including collected clocks. Different level timer lengths therefore remain comparable. |
+| Survival | 0 / 300 / 750 | Rewards finishing with 1 / 2 / 3 lives respectively. |
+| Difficulty | Easy ×1.00, Extreme ×1.35 | Recognizes physical inertia, precision and risk in Extreme. |
+
+`level score = round((completion + exploration + pace + survival) × difficulty)`
+
+The campaign ranking total is the sum of that player's best verified score on every completed level in the selected difficulty. Easy and Extreme have separate tables. The multiplier also makes the cross-mode **Top Explorer** feature value Extreme accomplishments appropriately.
+
 Validated records are stored in `leaderboard.json` on the separate `rankings` branch. Updates use optimistic concurrency and a shared workflow lock so validation and moderation cannot overwrite each other. The game reads this public JSON on demand. Accepted and rejected submissions receive a status comment and are closed. Once at least one real score exists, the strongest Easy or Extreme total appears in a dedicated **Top Explorer** card on the landing menu. Empty rankings never show a sample identity.
 
 ## Owner moderation
