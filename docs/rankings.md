@@ -6,7 +6,9 @@ After a win, **Submit verified run** opens a prepared GitHub issue. The player r
 
 Opening the prepared issue starts validation automatically. The workflow accepts only a normal GitHub user, an `[ORBIT RUN]` title and the expected replay block. It loads trusted code from `main`, validates bounded command data, and replays it at 60 simulation ticks per second. The final score, keys, lives, enemies and completion are recomputed. Client-provided points and usernames are never trusted. The identity comes from the GitHub issue author. No repository credential is shipped to the browser; issue content is parsed as data and never inserted into a shell command.
 
-Only the best score for each account, level and difficulty counts. The leaderboard sums these personal bests, with Easy and Extreme separated. Replaying easy levels cannot farm ranking points. Tied personal scores prefer fewer ticks; tied campaign totals use completed levels and then GitHub username for stable ordering. Records include their ruleset version; future incompatible gameplay changes need a new version and ranking season.
+The main competition is weekly, from Monday 00:00 UTC through Sunday 23:59:59 UTC, based on the GitHub submission creation time. Only the best score for each account, level, week and difficulty counts. The weekly total sums those personal bests, with Easy and Extreme separated. The landing page shows at most the current Top 3 for the selected difficulty; if that table is empty, it shows the active table from the other difficulty. Exact replay digests cannot be carried into a later week.
+
+At the first request after Monday's boundary, the current table is naturally empty until someone submits a new run; no destructive reset job is needed. Previous records feed a permanent **All Time** table, which takes each player's best result per level across every season. Completed weeks expose their winner in the **Hall of Fame**. Tied personal scores prefer fewer ticks; tied campaign totals use completed levels and then GitHub username for stable ordering.
 
 ## Score formula
 
@@ -32,7 +34,7 @@ Open **Actions → Moderate ORBIT 2 rankings → Run workflow**. Choose an actio
 
 | Action | Result |
 | --- | --- |
-| `remove_run` | Remove one result by GitHub user ID, difficulty and level number while preserving the player's other records. |
+| `remove_run` | Remove one exact result by GitHub user ID and submission issue number while preserving the player's other records. Difficulty and level remain a legacy fallback. |
 | `ban` / `unban` | Remove all records for an account and block future submissions, or restore eligibility. |
 | `force_alias` | Replace a player's nickname everywhere and enforce the safe replacement on later runs. |
 | `remove_alias` | Remove the nickname and show the verified GitHub username instead. |

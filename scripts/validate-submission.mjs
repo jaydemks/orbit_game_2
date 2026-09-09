@@ -33,7 +33,7 @@ try {
   return {status:'rejected'};
 }
 const digest=createHash('sha256').update(JSON.stringify(parsed.replay)).digest('hex');
-const improved=await storeVerified(api,result,{id:issue.user.id,login:issue.user.login,alias:parsed.alias},issue.number,digest);
+const improved=await storeVerified(api,result,{id:issue.user.id,login:issue.user.login,alias:parsed.alias},issue.number,digest,issue.created_at);
 await api('POST',`issues/${issue.number}/comments`,{body:`Replay verified: **${result.score} points**, level ${result.level+1}, ${result.difficulty}. ${improved?'Your personal best was saved.':'Your existing personal best is already equal or better.'}\n\n[View ORBIT 2 rankings](https://jaydemks.github.io/orbit_game_2/) · GitHub identity comes from this issue's author. Validation confirms a legal replay, not that it was played without automation.`});
 await api('PATCH',`issues/${issue.number}`,{state:'closed',state_reason:'completed'});
 return {status:'verified',improved,result};

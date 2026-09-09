@@ -25,6 +25,10 @@ on:
         description: Level number 1–40 for remove_run
         required: false
         type: string
+      run_issue:
+        description: Exact GitHub issue number for remove_run (recommended)
+        required: false
+        type: string
 permissions:
   contents: read
 concurrency:
@@ -54,4 +58,5 @@ jobs:
           MODERATION_VALUE: ${{ inputs.value }}
           MODERATION_DIFFICULTY: ${{ inputs.difficulty }}
           MODERATION_LEVEL: ${{ inputs.level_number }}
+          MODERATION_ISSUE: ${{ inputs.run_issue }}
         run: node scripts/moderate-rankings.mjs

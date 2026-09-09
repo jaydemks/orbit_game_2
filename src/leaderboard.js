@@ -1,5 +1,6 @@
 import { RULESET } from './replay.js';
 import { validateAlias } from './name-policy.js';
+import { weekKey } from './seasons.js';
 export const REPOSITORY = 'jaydemks/orbit_game_2';
 const DATA_URL = `https://raw.githubusercontent.com/${REPOSITORY}/rankings/leaderboard.json`;
 let rankingsCache=null,rankingsPromise=null,cacheTime=0;
@@ -14,21 +15,36 @@ async function loadRuns() {
   })();
   try{return await rankingsPromise;}finally{rankingsPromise=null;}
 }
-export async function fetchRankings(difficulty='easy') {
-  const runs=await loadRuns();
-  const players=new Map();
+function validRun(run,difficulty) {
+  return run.version===RULESET&&run.difficulty===difficulty&&Number.isSafeInteger(run.userId)&&Number.isInteger(run.level)&&Number.isFinite(run.score)&&typeof run.username==='string'&&/^[a-z\d](?:[a-z\d-]{0,37}[a-z\d])?$/i.test(run.username);
+}
+export function aggregateRankings(runs,difficulty='easy',period='weekly',current=weekKey()) {
+  const best=new Map();
   for(const run of runs){
-    if(run.version!==RULESET||run.difficulty!==difficulty||!Number.isSafeInteger(run.userId)||!Number.isFinite(run.score)||typeof run.username!=='string'||!/^[a-z\d](?:[a-z\d-]{0,37}[a-z\d])?$/i.test(run.username))continue;
+    if(!validRun(run,difficulty)||(period==='weekly'&&run.week!==current))continue;
+    const id=`${run.userId}:${run.level}`,old=best.get(id);
+    if(!old||run.score>old.score||run.score===old.score&&(run.ticks||Infinity)<(old.ticks||Infinity))best.set(id,run);
+  }
+  const players=new Map();
+  for(const run of best.values()){
     const checked=validateAlias(run.alias||'');
     const alias=checked.ok?checked.alias:'';
-    const player=players.get(run.userId)||{username:run.username,alias,score:0,levels:0,difficulty,latestIssue:-1};
+    const player=players.get(run.userId)||{userId:run.userId,username:run.username,alias,score:0,levels:0,difficulty,period,week:period==='weekly'?current:null,latestIssue:-1};
     if((run.issue||0)>player.latestIssue){player.latestIssue=run.issue||0;player.username=run.username;player.alias=alias;}
     player.score+=run.score;player.levels++;players.set(run.userId,player);
   }
   return [...players.values()].sort((a,b)=>b.score-a.score||b.levels-a.levels||a.username.localeCompare(b.username)).map((row,i)=>({...row,rank:i+1}));
 }
-export async function fetchAllRankings() {
-  const [easy,extreme]=await Promise.all([fetchRankings('easy'),fetchRankings('extreme')]);
+export async function fetchRankings(difficulty='easy',period='weekly') {
+  return aggregateRankings(await loadRuns(),difficulty,period);
+}
+export async function fetchHallOfFame(difficulty='easy') {
+  const runs=await loadRuns(),current=weekKey();
+  const weeks=[...new Set(runs.filter(run=>validRun(run,difficulty)&&run.week&&run.week!==current).map(run=>run.week))].sort().reverse().slice(0,12);
+  return weeks.map(week=>({...aggregateRankings(runs,difficulty,'weekly',week)[0],week})).filter(row=>row.username);
+}
+export async function fetchAllRankings(period='weekly') {
+  const [easy,extreme]=await Promise.all([fetchRankings('easy',period),fetchRankings('extreme',period)]);
   return {easy,extreme};
 }
 export function submissionBody(replay,alias='') {

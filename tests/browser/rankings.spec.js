@@ -1,4 +1,5 @@
 import { test,expect } from '@playwright/test';
+import { weekKey } from '../../src/seasons.js';
 async function ready(page){await page.goto('/?test');await page.waitForFunction(()=>window.__ORBIT__?.view);await expect(page.locator('#boot')).toBeHidden();}
 test('real keyboard win exports a valid replay and optional GitHub submission',async({page})=>{
   await ready(page);await page.getByRole('button',{name:'Start rolling'}).click();await expect(page.locator('#boot')).toBeHidden();
@@ -17,13 +18,16 @@ test('real keyboard win exports a valid replay and optional GitHub submission',a
   expect(new URL(url).searchParams.get('body')).toContain('Star Pilot');
 });
 test('rankings show verified profile links, split modes, no invented empty rows',async({page})=>{
-  await page.route('https://raw.githubusercontent.com/jaydemks/orbit_game_2/rankings/leaderboard.json',route=>route.fulfill({json:{runs:[{userId:1,username:'octocat',alias:'Space Pilot',score:1000,level:0,difficulty:'easy',version:'orbit2-2026-09-score-v2'}]}}));
+  const runs=['octocat','hubot','monalisa','defunkt'].map((username,index)=>({userId:index+1,username,alias:index?'': 'Space Pilot',score:1000-index*100,level:0,difficulty:'easy',version:'orbit2-2026-09-score-v2',week:weekKey()}));
+  await page.route('https://raw.githubusercontent.com/jaydemks/orbit_game_2/rankings/leaderboard.json',route=>route.fulfill({json:{runs}}));
   await page.goto('/?test&rankings');await page.waitForFunction(()=>window.__ORBIT__?.view);await expect(page.locator('#boot')).toBeHidden();
   await expect(page.locator('.home-ranking-card')).toBeVisible();
+  await expect(page.locator('.home-ranking-card li')).toHaveCount(3);
   await expect(page.locator('.home-ranking-card').getByRole('link',{name:'Open octocat on GitHub'})).toHaveAttribute('href','https://github.com/octocat');
   await page.getByRole('button',{name:'Rankings',exact:true}).click();
   await expect(page.getByRole('heading',{name:'Every point has a reason.'})).toBeVisible();
   await expect(page.getByText('Space Pilot')).toBeVisible();
+  await expect(page.getByRole('group',{name:'Ranking period'}).getByRole('button',{name:'This week'})).toHaveAttribute('aria-pressed','true');
   await expect(page.getByRole('link',{name:'Open octocat on GitHub'}).first()).toHaveAttribute('href','https://github.com/octocat');
   await page.getByRole('group',{name:'Ranking difficulty'}).getByRole('button',{name:'Extreme'}).click();
   await expect(page.getByText('The first star could be you.')).toBeVisible();await expect(page.locator('.rankings-table tbody tr')).toHaveCount(0);

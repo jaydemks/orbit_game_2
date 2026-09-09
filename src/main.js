@@ -14,7 +14,7 @@ import musicTracks from 'virtual:orbit-music';
 import { readProgress, saveProgress, awardCompletion, SKINS } from './progress.js';
 import { loading } from './loading.js';
 import { RunRecorder,STEP } from './replay.js';
-import { fetchRankings,fetchAllRankings,submissionURL,submissionBody,REPOSITORY } from './leaderboard.js';
+import { fetchRankings,fetchAllRankings,fetchHallOfFame,submissionURL,submissionBody,REPOSITORY } from './leaderboard.js';
 
 const progress = readProgress();
 const sound = new Soundscape(musicTracks);
@@ -72,18 +72,15 @@ const game = new Game({ onChange: snapshot => { if (!transitionRemaining) ui?.up
 }});
 recorder=new RunRecorder(game);
 
-async function leaderboard(difficulty='easy') {
+async function leaderboard(difficulty='easy',period='weekly') {
   const request=++rankingsRequest;ui.setLeaderboard({status:'loading',rows:[]});
-  try {const rows=await fetchRankings(difficulty);if(request===rankingsRequest)ui.setLeaderboard({status:'ready',rows});}
+  try {const [rows,hall]=await Promise.all([fetchRankings(difficulty,period),period==='weekly'?fetchHallOfFame(difficulty):[]]);if(request===rankingsRequest)ui.setLeaderboard({status:'ready',rows,hall,period});}
   catch(error){if(request===rankingsRequest)ui.setLeaderboard({status:'error',rows:[],message:error.message});}
 }
 async function featureTopExplorer() {
   try {
-    const groups=await fetchAllRankings();
-    const candidates=[groups.easy[0],groups.extreme[0]].filter(Boolean);
-    candidates.sort((a,b)=>b.score-a.score||b.levels-a.levels||a.username.localeCompare(b.username));
-    ui.setFeaturedLeaderboard(candidates[0]||null);
-  } catch { ui.setFeaturedLeaderboard(null); }
+    ui.setFeaturedLeaderboard(await fetchAllRankings('weekly'));
+  } catch { ui.setFeaturedLeaderboard({easy:[],extreme:[]}); }
 }
 function submitScore({identity,alias}) {
   if(!finishedRun)return;

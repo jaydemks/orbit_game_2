@@ -18,7 +18,8 @@ test('owner can ban a GitHub identity or replace and remove its nickname',()=>{
 
 test('owner can remove one run without removing the player',()=>{
   const runs=[...board.runs,{userId:7,username:'player',alias:'Bright Star',score:30,level:1,difficulty:'extreme'}];
-  const state=applyModeration({runs},emptyModeration(),'remove_run',7,'',{difficulty:'extreme',level:'2'});
+  runs.at(-1).issue=44;
+  const state=applyModeration({runs},emptyModeration(),'remove_run',7,'',{issue:'44'});
   assert.equal(state.board.runs.some(run=>run.userId===7&&run.difficulty==='extreme'&&run.level===1),false);
   assert.equal(state.board.runs.some(run=>run.userId===7),true);
 });
