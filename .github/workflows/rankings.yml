@@ -1,13 +1,18 @@
 name: Validate ORBIT 2 ranked run
 on:
-  issues:
-    types: [opened]
   workflow_dispatch:
+    inputs:
+      issue_number:
+        description: Public ORBIT RUN issue number to review and validate
+        required: true
+        type: number
 permissions:
   contents: read
+concurrency:
+  group: orbit-rankings-write
+  cancel-in-progress: false
 jobs:
   verify:
-    if: github.event_name == 'workflow_dispatch' || startsWith(github.event.issue.title, '[ORBIT RUN]')
     runs-on: ubuntu-latest
     timeout-minutes: 3
     permissions:
@@ -15,17 +20,17 @@ jobs:
       issues: write
     steps:
       # Always execute trusted main-branch code. Issue text is parsed only as data.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: main
           persist-credentials: false
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
       - name: Exercise replay validation and concurrent score storage
-        run: node --test tests/replay.test.js tests/rankings.test.js
+        run: node --test tests/replay.test.js tests/rankings.test.js tests/name-policy.test.js tests/moderation.test.js
       - name: Validate submission
-        if: github.event_name == 'issues'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_NUMBER: ${{ inputs.issue_number }}
         run: node scripts/validate-submission.mjs

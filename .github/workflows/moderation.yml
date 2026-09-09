@@ -1,0 +1,44 @@
+name: Moderate ORBIT 2 rankings
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: Moderation action
+        required: true
+        type: choice
+        options: [ban, unban, force_alias, remove_alias, allow_alias, blacklist_term, unblacklist_term]
+      user_id:
+        description: Numeric GitHub user ID (required for user/alias actions)
+        required: false
+        type: string
+      value:
+        description: Safe replacement alias or term to blacklist
+        required: false
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: orbit-rankings-write
+  cancel-in-progress: false
+jobs:
+  moderate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+      - run: node --test tests/name-policy.test.js tests/moderation.test.js
+      - name: Apply moderation to the rankings branch
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MODERATION_ACTION: ${{ inputs.action }}
+          MODERATION_USER_ID: ${{ inputs.user_id }}
+          MODERATION_VALUE: ${{ inputs.value }}
+        run: node scripts/moderate-rankings.mjs

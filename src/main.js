@@ -14,7 +14,7 @@ import musicTracks from 'virtual:orbit-music';
 import { readProgress, saveProgress, awardCompletion, SKINS } from './progress.js';
 import { loading } from './loading.js';
 import { RunRecorder,STEP } from './replay.js';
-import { fetchRankings,submissionURL,submissionBody,REPOSITORY } from './leaderboard.js';
+import { fetchRankings,fetchAllRankings,submissionURL,submissionBody,REPOSITORY } from './leaderboard.js';
 
 const progress = readProgress();
 const sound = new Soundscape(musicTracks);
@@ -76,6 +76,14 @@ async function leaderboard(difficulty='easy') {
   const request=++rankingsRequest;ui.setLeaderboard({status:'loading',rows:[]});
   try {const rows=await fetchRankings(difficulty);if(request===rankingsRequest)ui.setLeaderboard({status:'ready',rows});}
   catch(error){if(request===rankingsRequest)ui.setLeaderboard({status:'error',rows:[],message:error.message});}
+}
+async function featureTopExplorer() {
+  try {
+    const groups=await fetchAllRankings();
+    const candidates=[groups.easy[0],groups.extreme[0]].filter(Boolean);
+    candidates.sort((a,b)=>b.score-a.score||b.levels-a.levels||a.username.localeCompare(b.username));
+    ui.setFeaturedLeaderboard(candidates[0]||null);
+  } catch { ui.setFeaturedLeaderboard(null); }
 }
 function submitScore({identity,alias}) {
   if(!finishedRun)return;
@@ -146,6 +154,7 @@ try {
   view = new WorldView(document.getElementById('world'));
   view.setQuality(progress.quality);view.setSkin(progress.skin);
   await prepareScene('Building the sanctuary',buildMenu);
+  if(!new URLSearchParams(location.search).has('test')||new URLSearchParams(location.search).has('rankings'))featureTopExplorer();
 } catch(error) {
   console.error(error);
   loading.fail('Unable to start WebGL. Enable hardware acceleration and reload.');

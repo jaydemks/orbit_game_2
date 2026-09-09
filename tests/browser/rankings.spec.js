@@ -7,19 +7,23 @@ test('real keyboard win exports a valid replay and optional GitHub submission',a
   const verified=await page.evaluate(async()=>{const {validateReplay}=await import('/src/replay.js');const a=window.__ORBIT__;return {actual:a.game.score,verified:validateReplay(a.recorder.export()).score};});
   expect(verified.verified).toBe(verified.actual);
   await page.getByRole('button',{name:'Submit verified run'}).click();
-  await page.getByRole('button',{name:'Make yourself famous',exact:true}).click();
-  await page.getByLabel('Your explorer alias').fill('Star Pilot');
+  await page.getByRole('button',{name:'Add a nickname',exact:true}).click();
+  await page.getByLabel('Your explorer nickname').fill('Star Pilot');
+  await page.getByLabel(/I understand that my GitHub username/).check();
   await page.evaluate(()=>{window.open=(url)=>{window.submissionURL=url;return null;};});
-  await page.getByRole('button',{name:'Submit verified run'}).click();
+  await page.getByRole('button',{name:'Open GitHub submission'}).click();
   const url=await page.evaluate(()=>window.submissionURL);
   expect(url).toContain('https://github.com/jaydemks/orbit_game_2/issues/new');
   expect(new URL(url).searchParams.get('body')).toContain('Star Pilot');
 });
 test('rankings show verified profile links, split modes, no invented empty rows',async({page})=>{
   await page.route('https://raw.githubusercontent.com/jaydemks/orbit_game_2/rankings/leaderboard.json',route=>route.fulfill({json:{runs:[{userId:1,username:'octocat',alias:'Space Pilot',score:1000,level:0,difficulty:'easy',version:'orbit2-2026-09-expeditions'}]}}));
-  await ready(page);await page.getByRole('button',{name:'Rankings',exact:true}).click();
+  await page.goto('/?test&rankings');await page.waitForFunction(()=>window.__ORBIT__?.view);await expect(page.locator('#boot')).toBeHidden();
+  await expect(page.locator('.home-ranking-card')).toBeVisible();
+  await expect(page.locator('.home-ranking-card').getByRole('link',{name:'Open octocat on GitHub'})).toHaveAttribute('href','https://github.com/octocat');
+  await page.getByRole('button',{name:'Rankings',exact:true}).click();
   await expect(page.getByText('Space Pilot')).toBeVisible();
-  await expect(page.getByRole('link',{name:'Open octocat on GitHub'})).toHaveAttribute('href','https://github.com/octocat');
+  await expect(page.getByRole('link',{name:'Open octocat on GitHub'}).first()).toHaveAttribute('href','https://github.com/octocat');
   await page.getByRole('group',{name:'Ranking difficulty'}).getByRole('button',{name:'Extreme'}).click();
   await expect(page.getByText('The first star could be you.')).toBeVisible();await expect(page.locator('.rankings-table tbody tr')).toHaveCount(0);
 });
