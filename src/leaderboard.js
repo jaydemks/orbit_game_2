@@ -34,7 +34,7 @@ export async function fetchAllRankings() {
 export function submissionBody(replay,alias='') {
   const checked=validateAlias(alias);
   if(!checked.ok)throw Error(checked.reason);
-  return `Please queue this ORBIT 2 run for owner review. I understand that my public GitHub account identifies this result.\n\n\`\`\`orbit-run\n${JSON.stringify({alias:checked.alias,replay})}\n\`\`\``;
+  return `Please validate this ORBIT 2 run automatically. I understand that my public GitHub account identifies this result.\n\n\`\`\`orbit-run\n${JSON.stringify({alias:checked.alias,replay})}\n\`\`\``;
 }
 export function submissionURL(replay,alias='') {
   const url=new URL(`https://github.com/${REPOSITORY}/issues/new`);
