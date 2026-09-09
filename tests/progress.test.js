@@ -28,3 +28,8 @@ test('ORBIT 2 owns its save namespace and keeps Extreme records separate',()=>{
   saveProgress(p,{setItem:key=>written.push(key)});
   assert.deepEqual(readKeys,['orbit2.progress.v1']);assert.deepEqual(written,['orbit2.progress.v1']);
 });
+
+test('players who finished the former final level unlock the new expedition and preserve independent volumes',()=>{
+  const p=readProgress({getItem:()=>JSON.stringify({unlocked:32,best:{31:{score:1200}},musicVolume:0,effectsVolume:.8})});
+  assert.equal(p.unlocked,33);assert.equal(p.musicVolume,0);assert.equal(p.effectsVolume,.8);
+});

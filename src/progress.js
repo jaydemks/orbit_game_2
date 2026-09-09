@@ -1,7 +1,7 @@
 import { LEVELS } from './levels.js';
 export const SKINS = [{id:'glacier',price:0},{id:'sunset',price:80},{id:'obsidian',price:150},{id:'pearl',price:220},{id:'aurora',price:350},{id:'classic',price:100},{id:'inferno',price:480},{id:'frost',price:480},{id:'plasma',price:650},{id:'stardust',price:800}];
 const KEY = 'orbit2.progress.v1';
-const fresh = () => ({bank:0,unlocked:1,owned:['glacier'],skin:'glacier',best:{},extremeBest:{},difficulty:'easy',sound:true,quality:'high'});
+const fresh = () => ({bank:0,unlocked:1,owned:['glacier'],skin:'glacier',best:{},extremeBest:{},difficulty:'easy',sound:true,musicVolume:.35,effectsVolume:.65,quality:'high'});
 export function readProgress(storage = globalThis.localStorage) {
   const result = fresh();
   try {
@@ -13,8 +13,12 @@ export function readProgress(storage = globalThis.localStorage) {
     result.skin = result.owned.includes(data.skin)?data.skin:'glacier';
     result.best = data.best && typeof data.best === 'object' && !Array.isArray(data.best)?data.best:{};
     result.extremeBest = data.extremeBest && typeof data.extremeBest === 'object' && !Array.isArray(data.extremeBest)?data.extremeBest:{};
+    for(const level of [...Object.keys(result.best),...Object.keys(result.extremeBest)]){
+      const index=Number(level);if(Number.isInteger(index)&&index>=0&&index<LEVELS.length)result.unlocked=Math.max(result.unlocked,Math.min(LEVELS.length,index+2));
+    }
     result.difficulty = data.difficulty === 'extreme' ? 'extreme' : 'easy';
     result.sound = data.sound !== false;
+    for(const key of ['musicVolume','effectsVolume'])if(typeof data[key]==='number'&&Number.isFinite(data[key]))result[key]=Math.max(0,Math.min(1,data[key]));
     result.quality = data.quality === 'balanced' ? 'balanced':'high';
   } catch {}
   return result;

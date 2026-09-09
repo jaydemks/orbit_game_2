@@ -1,5 +1,6 @@
 import { LEVELS } from './levels.js';
 import { SurfacePhysics } from './physics.js';
+import { EnemySimulation } from './enemies.js';
 
 const add=(a,b)=>a.map((v,i)=>v+b[i]);
 const neg=a=>a.map(v=>-v);
@@ -24,6 +25,16 @@ export class Game {
   setDifficulty(value){this.difficulty=value==='extreme'?'extreme':'easy';this.physics=this.difficulty==='extreme'?new SurfacePhysics(this):null;this.changed();}
   setInput(input={}){this.input={...input};if(this.physics)this.physics.input=this.input;}
   getPhysicalPose(){return this.physics?.pose()??null;}
+  getEnemies(){return this.enemies?.snapshots()??[];}
+  getEnemyCollisionPose(){
+    if(this.physics)return this.physics.pose();
+    const motion=this.easyJump;
+    if(motion&&motion.elapsed<motion.duration){
+      const t=motion.elapsed/motion.duration;
+      return {normal:[...motion.normal],position:motion.from.map((v,i)=>v+(motion.to[i]-v)*t+motion.normal[i]*(.815+Math.sin(Math.PI*t)*1.2))};
+    }
+    return {normal:[...this.normal],position:this.cell.map((v,i)=>v+this.normal[i]*.815)};
+  }
   pose(){return {cell:[...this.cell],normal:[...this.normal],forward:[...this.forward]};}
   emit(type,detail={}){this.onEvent({type,...detail});}
   changed(){this.onChange(this.getSnapshot());}
@@ -34,6 +45,7 @@ export class Game {
     this.state='playing';this.time=this.level.time;this.lives=3;this.coins=0;this.keys=0;this.score=0;
     this.totalKeys=this.level.items.filter(i=>i.type==='key').length;this.collected=new Set();this.cooldown=0;this.lastSecond=Math.ceil(this.time);this.physicsUiElapsed=0;
     if(this.difficulty==='extreme'){this.physics=new SurfacePhysics(this);this.physics.input=this.input;}
+    this.enemyGrace=1.5;this.easyJump=null;this.enemies=new EnemySimulation(this);
     this.emit('start',{levelIndex:this.levelIndex});this.changed();
   }
   retry(){this.start(this.levelIndex);}
@@ -65,6 +77,7 @@ export class Game {
       this.cooldown=.55;this.emit('move',{from,to:{cell:landing,normal:[...this.normal],forward:[...this.forward]},jump:true,fall:true,duration:.5});
       this.damage('fall');return true;
     }
+    this.easyJump={from:[...this.cell],to:[...landing],normal:[...this.normal],elapsed:0,duration:.48};
     this.cell=landing;this.cooldown=.48;this.emit('move',{from,to:this.pose(),jump:true,duration:.48});this.touch();this.changed();return true;
   }
   touch(){
@@ -85,6 +98,7 @@ export class Game {
     }
   }
   damage(reason){
+    this.enemyGrace=2;this.easyJump=null;
     this.lives--;this.emit('damage',{reason,lives:this.lives});
     if(this.lives<=0){this.state='lost';this.emit('lost',{reason});}
     else {
@@ -97,8 +111,10 @@ export class Game {
   update(dt){
     if(this.state!=='playing')return;
     dt=Math.max(0,Math.min(dt,.25));this.cooldown=Math.max(0,this.cooldown-dt);this.time=Math.max(0,this.time-dt);
+    this.enemyGrace=Math.max(0,(this.enemyGrace||0)-dt);if(this.easyJump)this.easyJump.elapsed+=dt;
     if(this.time<=0){this.damage('timeout');return;}
     if(this.physics&&this.cooldown===0)this.physics.update(dt);
+    if(this.state==='playing')this.enemies?.update(dt);
     const second=Math.ceil(this.time),secondChanged=second!==this.lastSecond;this.lastSecond=second;
     this.physicsUiElapsed=(this.physicsUiElapsed||0)+dt;
     if(secondChanged||(this.physics&&this.physicsUiElapsed>=.1)){this.physicsUiElapsed=0;this.changed();}

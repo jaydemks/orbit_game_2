@@ -11,7 +11,9 @@ const NAMES = [
   'Blue current','Undertow','Coral staircase','Tidal loop','Deep passage','Pearl horizon',
   'Night shift','Ember bridge','Fault line','The crucible','Dark matter','Event horizon',
   'Skyward','Cloud atlas','Helix','The observatory','Infinity garden','Home among stars',
-  'Neon canopy','Prism causeway','Furnace ascent','Clockwork orbit','Ion islands','Gravity engine','Aurora rail','The singularity'
+  'Neon canopy','Prism causeway','Furnace ascent','Clockwork orbit','Ion islands','Gravity engine','Aurora rail','The singularity',
+  'Citadel of echoes','The coral foundry','Ember labyrinth','Celestial interchange',
+  'Canopy megastructure','Turbine cathedral','The fractured crown','Beyond the event horizon'
 ];
 const SUBTITLES = [
   'Collect the key. Find your way home.', 'A missing block. Press Space to leap across.', 'Glowing tiles burn. Jump over them with Space.',
@@ -25,7 +27,11 @@ const SUBTITLES = [
   'An electric forest. Brake before every turn.', 'Build speed, then leap across the luminous divide.',
   'Hot steps rise toward a colder sky.', 'Follow the light around the machine.',
   'Separate islands. One continuous journey.', 'Climb the engine, then find its hidden heart.',
-  'A narrow ribbon above the storm.', 'Every skill. One final portal.'
+  'A narrow ribbon above the storm.', 'Every skill. One final portal.',
+  'Multiple routes. Watch the sentinels before crossing.', 'Climb the coral engine and find all four keys.',
+  'The labyrinth has more than one safe way through.', 'Upper bridges hide paths below the interchange.',
+  'A living city above the clouds. Read every warning.', 'Wait for the turbines to cool, then make your move.',
+  'A fractured kingdom connected by carefully timed leaps.', 'The longest journey ends beyond the last sentinel.'
 ];
 
 function makeShape(index) {
@@ -35,6 +41,28 @@ function makeShape(index) {
     let c = [...a]; put(...c);
     for(let k=0;k<3;k++) while(c[k]!==b[k]) { c[k]+=Math.sign(b[k]-c[k]); put(...c); }
   };
+  if(index>=32){
+    const variant=index-32,width=8+variant%3,depth=10+Math.floor(variant/2),height=3+variant%2;
+    // Lower circuits, elevated crossings and branching towers provide alternative routes.
+    line([0,0,0],[0,0,-depth]);line([0,0,-depth],[width,0,-depth]);
+    line([width,0,-depth],[width,0,-2]);line([width,0,-2],[0,0,-2]);
+    line([2,0,-depth],[2,height,-depth]);line([2,height,-depth],[width-2,height,-depth]);
+    line([width-2,height,-depth],[width-2,height,-2]);line([width-2,height,-2],[width-2,0,-2]);
+    if(variant%4===0){
+      line([0,0,-6],[-4,0,-6]);line([-4,0,-6],[-4,height+1,-6]);line([-4,height+1,-6],[2,height+1,-6]);
+    }else if(variant%4===1){
+      line([width,0,-6],[width+3,0,-6]);line([width+3,0,-6],[width+3,height+2,-6]);
+      line([width+3,height+2,-6],[width-2,height+2,-6]);line([width-2,height+2,-6],[width-2,height,-6]);
+    }else if(variant%4===2){
+      line([0,0,-7],[-3,0,-7]);line([-3,0,-7],[-3,2,-7]);line([-3,2,-7],[-3,2,-depth-3]);
+      line([-3,2,-depth-3],[3,2,-depth-3]);line([3,2,-depth-3],[3,2,-depth]);line([3,2,-depth],[3,0,-depth]);
+    }else{
+      line([width,0,-depth],[width,0,-depth-4]);line([width,0,-depth-4],[width,height+2,-depth-4]);
+      line([width,height+2,-depth-4],[2,height+2,-depth-4]);line([2,height+2,-depth-4],[2,height+2,-depth]);line([2,height+2,-depth],[2,height,-depth]);
+    }
+    if(variant>=4){cells.delete('0,0,-4');cells.delete(`${width},0,-7`);}
+    return [...cells.values()];
+  }
   const tier=Math.floor(index/6), variant=index%6, length=5+tier;
   if(variant===0) {
     line([0,0,0],[0,0,-length]);
@@ -102,6 +130,7 @@ function buildLevel(index) {
   else place('key',far.find(f=>f.normal[1]===-1));
   if(index>=6)place('key',far.find(f=>!used.has(faceId(f.cell,f.normal))&&f.normal[0]!==0));
   if(index>=18)place('key',top[Math.floor(top.length/2)]);
+  if(index>=32)place('key',far.find(f=>!used.has(faceId(f.cell,f.normal))&&f.normal[2]!==0));
   // Visible hazards occupy the main top route before coins are distributed.
   // The first burn is always one block ahead, with a safe two-block landing.
   if(index>=2)place('lava',top.find(f=>id(f.cell)==='0,0,-1'));
@@ -127,8 +156,21 @@ function buildLevel(index) {
     const candidates=queue.filter(f=>f.distance>2&&f.normal[0]===1&&!used.has(faceId(f.cell,f.normal)));
     for(let j=0;j<Math.min(1+Math.floor(index/4),candidates.length);j++)place('spike',candidates[j*3%candidates.length]);
   }
-  return {id:index+1,name:NAMES[index],world:WORLDS[index<24?Math.floor(index/6):(index-24)%4],worldIndex:index<24?Math.floor(index/6):(index-24)%4,advanced:index>=24,emissive:index>=24,subtitle:SUBTITLES[index],time:150+Math.floor(index/6)*35+(index%6)*12,cubes,start,items};
+  // Fixed attack zones leave spawn, keys and the portal safe, with space to wait.
+  const enemies=[];
+  if(index>=16){
+    const forbidden=new Set(items.filter(item=>['exit','key','lava','spike'].includes(item.type)).map(item=>faceId(item.cell,item.normal)));
+    for(const face of top){
+      if(enemies.length>=Math.min(3,1+Math.floor((index-16)/10)))break;
+      if(face.distance<5||forbidden.has(faceId(face.cell,face.normal)))continue;
+      if(enemies.some(enemy=>Math.hypot(...enemy.cell.map((v,i)=>v-face.cell[i]))<3))continue;
+      const exits=AXES.filter(d=>dot(d,face.normal)===0).filter(d=>safeLanding(add(face.cell,d),face.normal)&&!forbidden.has(faceId(add(face.cell,d),face.normal)));
+      if(!exits.length)continue;
+      enemies.push({id:`sentinel-${index+1}-${enemies.length+1}`,cell:[...face.cell],normal:[...face.normal],offset:enemies.length*.8,radius:.68});
+    }
+  }
+  return {id:index+1,name:NAMES[index],world:WORLDS[index<24?Math.floor(index/6):(index-24)%4],worldIndex:index<24?Math.floor(index/6):(index-24)%4,advanced:index>=24,emissive:index>=24,subtitle:SUBTITLES[index],time:index>=32?540+(index-32)*20:150+Math.floor(index/6)*35+(index%6)*12,cubes,start,items,enemies};
 }
 
-export const LEVELS = Array.from({length:32},(_,i)=>buildLevel(i));
+export const LEVELS = Array.from({length:40},(_,i)=>buildLevel(i));
 export const WORLD_NAMES = WORLDS;

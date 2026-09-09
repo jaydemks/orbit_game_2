@@ -1,3 +1,4 @@
+import { EnemyView } from './enemy-view.js';
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
@@ -109,6 +110,7 @@ export class WorldView {
       direction: new THREE.Vector3(), right: new THREE.Vector3(), offset: new THREE.Vector3(),
       matrix: new THREE.Matrix4(), quaternion: new THREE.Quaternion(),
     };
+    this.cameraRay = new THREE.Raycaster();this.cameraHits=[];this.cameraRayOrigin=new THREE.Vector3();this.cameraRayDirection=new THREE.Vector3();this.cameraCandidate=new THREE.Vector3();this.cameraSide=new THREE.Vector3();this.occlusionDistance=null;
     this.skinId = 'glacier';
     this.collected = new Set();
     this.elapsed = 0;
@@ -166,6 +168,7 @@ export class WorldView {
     this.floor.visible = false;
     this._makeBall();
     this.effects = new BallEffects(this.scene);
+    this.enemies = new EnemyView(this.scene);
     this.playerPosition = new THREE.Vector3(0, .82, 0);
     this.fromPosition = this.playerPosition.clone(); this.targetPosition = this.playerPosition.clone();
     this.playerNormal = UP.clone(); this.targetNormal = UP.clone();
@@ -263,7 +266,10 @@ export class WorldView {
     }
   }
 
+  setEnemies(enemies) {this.enemies.set(enemies);}
+
   setLevel(level) {
+    this.enemies?.set([]);
     this.level = level;
     const palettes = [
       { sky: 0xf4e6d2, blocks: [0xf3c36d, 0xd89048, 0xe56c4d], ground: 0xe9dbc7, sun: 0xffedcc },
@@ -470,7 +476,7 @@ export class WorldView {
 
   setPlayer(cell, normal, forward, { jump = false, instant = false, duration, fall = false } = {}) {
     this.physical = false;
-    if (instant) { this.sequence = null; this.ball.visible = true; this.effects?.reset(); }
+    if (instant) { this.occlusionDistance=null; this.sequence = null; this.ball.visible = true; this.effects?.reset(); }
     this.fromPosition.copy(this.playerPosition);
     this.fromNormal.copy(this.targetNormal);
     this.targetNormal.copy(v3(normal, [0, 1, 0])).normalize();
@@ -519,6 +525,7 @@ export class WorldView {
     const target=exit ? exit.root.localToWorld(new THREE.Vector3(0,.53,0)) : this.playerPosition.clone();
     this.sequence={kind,duration,time:0,started:performance.now(),origin:this.ball.position.clone(),target,normal:this.targetNormal.clone()};
     if(kind!=='won')this.effects.burst(this.playerPosition,this.targetNormal,140);
+    if(kind==='enemy'&&this.skinId!=='classic')this.effects.shatter(this.ball.position,this.targetNormal);
     return duration;
   }
 
@@ -543,6 +550,7 @@ export class WorldView {
     this.adaptiveFrames = 0; this.adaptiveTotal = 0; this.adaptiveWarmup = 120;
     this.bloom.enabled = quality !== 'balanced';
     this.livingEnvironment.setQuality(quality);
+    this.effects.setQuality(quality);
     this.resize();
   }
 
@@ -577,6 +585,7 @@ export class WorldView {
     this.adaptiveFrames = (this.adaptiveFrames || 0) + 1;
     if (this.adaptiveFrames < 120) return;
     const average = this.adaptiveTotal / this.adaptiveFrames;
+    this.effects.setQuality(average>23 ? 'balanced' : this.quality);
     this.adaptiveTotal = 0; this.adaptiveFrames = 0;
     const ceiling = this.resolutionCeiling || Math.min(window.devicePixelRatio || 1, 1.75);
     const current = this.renderer.getPixelRatio();
@@ -631,7 +640,9 @@ export class WorldView {
         this.ball.position.lerpVectors(a.origin,a.target,p*p);const swirl=Math.sin(p*Math.PI)*.55;
         this.ball.position.x+=Math.sin(p*22)*swirl;this.ball.position.z+=Math.cos(p*22)*swirl;this.ball.position.y+=Math.sin(p*Math.PI)*.55;
         this.ball.scale.setScalar(Math.max(.001,Math.pow(1-p,1.6)));this.ball.rotateY(dt*18);
-      }else if(a.kind==='fall'){this.ball.position.copy(a.origin).addScaledVector(a.normal,-p*p*8);this.ball.scale.setScalar(1-p*.7);}
+      }else if(a.kind==='enemy' && this.skinId==='classic'){this.ball.position.copy(a.origin).addScaledVector(a.normal,-p*.24);this.ball.quaternion.setFromUnitVectors(UP,a.normal);this.ball.scale.set(1+p*.35,Math.max(.07,1-p),1+p*.35);}
+      else if(a.kind==='enemy'){this.ball.scale.setScalar(Math.max(.001,1-p*9));}
+      else if(a.kind==='fall'){this.ball.position.copy(a.origin).addScaledVector(a.normal,-p*p*8);this.ball.scale.setScalar(1-p*.7);}
       else {this.ball.scale.setScalar(Math.max(.001,1-p));this.ball.position.copy(a.origin).addScaledVector(a.normal,Math.sin(p*Math.PI)*.35);}
       if(p>=1)this.ball.visible=false;
     }
@@ -663,6 +674,7 @@ export class WorldView {
     this.decorGroup.children.forEach((o, i) => { o.rotation.y += dt * .045 * (i % 2 ? 1 : -1); });
     this.dust.rotation.y = this.elapsed * .004;
     this.livingEnvironment.update(dt,this.elapsed);
+    this.enemies.update(this.elapsed);
     const desiredPosition = this.scratch.position; const target = this.scratch.target; const cameraUp = this.scratch.up;
     if (this.mode === 'menu') {
       const distance = Math.max(15.4, this.levelRadius * 4.7) * (this.width < 800 ? Math.max(1.2, .72 / this.camera.aspect) : 1);
@@ -681,6 +693,27 @@ export class WorldView {
       desiredPosition.copy(target).add(this.scratch.offset.set(.8, 4.8, 6.5).applyQuaternion(this.cameraFrame));
       cameraUp.copy(UP).applyQuaternion(this.cameraFrame);
     }
+    if(this.mode!=='menu'){
+      // Only playable blocks obstruct the chase camera; scenery never pulls it in.
+      const origin=this.cameraRayOrigin.copy(this.playerPosition).addScaledVector(this.targetNormal,.06);
+      const direction=this.cameraRayDirection.copy(desiredPosition).sub(origin);const distance=direction.length();direction.normalize();
+      this.cameraRay.set(origin,direction);this.cameraRay.near=.02;this.cameraRay.far=distance;this.cameraHits.length=0;
+      this.cameraRay.intersectObjects(this.levelGroup.children,false,this.cameraHits);
+      let available=this.cameraHits.length?Math.max(.02,this.cameraHits[0].distance-.18):distance;
+      if(available<2){
+        // A low ceiling needs a side angle, not an extreme zoom into the shell.
+        const side=this.cameraSide.crossVectors(this.playerForward,this.targetNormal).normalize();
+        for(const sign of [1,-1]){
+          const candidate=this.cameraCandidate.copy(side).multiplyScalar(sign*4).addScaledVector(this.targetNormal,1.1).addScaledVector(this.playerForward,-1.5);
+          const length=candidate.length();candidate.normalize();this.cameraRay.set(origin,candidate);this.cameraRay.far=length;this.cameraHits.length=0;this.cameraRay.intersectObjects(this.levelGroup.children,false,this.cameraHits);
+          const clear=this.cameraHits.length?Math.max(.02,this.cameraHits[0].distance-.18):length;
+          if(clear>available){available=clear;direction.copy(candidate);}
+        }
+      }
+      const previous=this.occlusionDistance??distance;
+      this.occlusionDistance=available<previous?available:Math.min(available,previous+dt*4);
+      if(this.occlusionDistance<distance-.01){desiredPosition.copy(origin).addScaledVector(direction,this.occlusionDistance);target.copy(this.playerPosition);}
+    }
     const blend = this.snapCamera ? 1 : 1 - Math.exp(-dt * (this.mode === 'menu' ? 2.5 : 5));
     if (this.mode === 'menu') this.camera.position.lerp(desiredPosition, blend);
     else this.camera.position.copy(desiredPosition);
@@ -694,6 +727,7 @@ export class WorldView {
   }
 
   dispose() {
+    this.enemies.dispose();
     this.effects.dispose();
     this.livingEnvironment.dispose();
     this._clearGroup(this.levelGroup); this._clearGroup(this.itemGroup); this._clearGroup(this.decorGroup);

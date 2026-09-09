@@ -12,11 +12,13 @@ ORBIT 2 is a separate release with its own saves. The original game stays availa
 | --- | --- |
 | ![Advanced emissive level](docs/screenshots/advanced.jpg) | ![Unlocked portal](docs/screenshots/portal.jpg) |
 
-- **32 levels, four living worlds:** gardens, oceans, volcanic machinery and cosmic islands, with animated flying creatures and structures.
+- **40 levels, four living worlds:** gardens, oceans, volcanic machinery and cosmic islands, with animated flying creatures and structures.
 - **Easy or Extreme:** classic precise steps by default, or physical acceleration, inertia, braking and speed-dependent jumps. Slow down to wrap around edges; excessive speed can send you into the void.
 - **Ten earnable spheres:** glass, pearl and crystal join fire, ice, plasma and stardust. Fire and ice leave fading surface trails.
-- Animated portal absorption, falls and destruction; lava, spikes, gaps, timers and three lives.
-- Readable English menus, portrait/landscape touch controls, loading progress, shader warm-up, instanced scenery and adaptive resolution.
+- **Sentinels from level 17:** watch their warning zones, dodge or jump their pulse. Glass shatters; the Classic ball deflates. Eight new expeditions add larger circuits, elevated bridges and four-key routes.
+- **Optional verified rankings:** publish a replay under your GitHub identity or an alias. GitHub validates commands and recomputes the score; only your best per level counts. [How rankings work and their limits](docs/rankings.md).
+- Fire tongues, embers, soft smoke, ice fragments and mist use shared particle pools. Readable English menus, mobile controls, shader warm-up and adaptive resolution.
+- Separate **Music** and **Sound effects** volume sliders; mute either without losing the other.
 
 | Inferno | Frost |
 | --- | --- |
@@ -31,9 +33,13 @@ ORBIT 2 is a separate release with its own saves. The original game stays availa
 
 Touch buttons support steering and acceleration together. Difficulty changes apply to the next attempt; records are tracked separately.
 
+| Larger expeditions | Sentinel warning |
+| --- | --- |
+| ![Expedition with elevated routes](docs/screenshots/expedition.jpg) | ![Enemy warning zone](docs/screenshots/sentinel.jpg) |
+
 ## Soundtrack
 
-Add `Track_01.mp3` through `Track_10.mp3` to [`public/music/`](public/music/) and push to `main`. Present tracks shuffle without consecutive repeats and crossfade over five seconds. Missing tracks use a procedural ambient fallback. Audio starts after interaction; the audio toggle controls music and effects. See the [soundtrack notes](public/music/README.md).
+Add `Track_01.mp3` through `Track_10.mp3` to [`public/music/`](public/music/) and push to `main`. Present tracks shuffle without consecutive repeats and crossfade over five seconds. Missing tracks use a procedural ambient fallback. Audio starts after interaction; independent volume sliders control music and effects. See the [soundtrack notes](public/music/README.md).
 
 ## Development
 
@@ -47,6 +53,6 @@ npm run test:browser
 npm run build
 ```
 
-Browser tests require Chrome on Windows or `npx playwright install chromium` elsewhere. Tests solve all 32 levels in Easy and cover Extreme inertia, jumps, collisions, 832 surface transitions and a complete input-driven first-level run. The full Extreme campaign has not been automated end to end.
+Browser tests require Chrome on Windows or `npx playwright install chromium` elsewhere. Tests solve all 40 levels in Easy with active enemies and no lost lives and cover Extreme inertia, jumps, collisions, 832 surface transitions and a complete input-driven first-level run. The full Extreme campaign has not been automated end to end.
 
 Pushes to this repository's `main` deploy **only ORBIT 2** to GitHub Pages. The original repository is independent. Built with Three.js and Vite; procedural artwork and effects. An original homage to Kula World, not affiliated with its owners. MIT licensed.

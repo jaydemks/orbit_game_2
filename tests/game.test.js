@@ -40,11 +40,11 @@ function navigator(levelIndex) {
     }
     return target ? null : faces;
   }
-  return {search};
+  return {search,next};
 }
 
 test('every campaign collectible and exit is reachable while avoiding hazards',()=>{
-  assert.equal(LEVELS.length,32);
+  assert.equal(LEVELS.length,40);
   for(let index=0;index<LEVELS.length;index++) {
     const level=LEVELS[index], reachable=navigator(index).search(level.start);
     const occupied=new Set(level.cubes.map(c=>c.join(',')));
@@ -58,14 +58,25 @@ test('every campaign collectible and exit is reachable while avoiding hazards',(
   }
 });
 
-test('all 32 levels can be won through real input, including every required key',()=>{
+test('all 40 levels can be won through real input, including every required key',()=>{
   for(let index=0;index<LEVELS.length;index++) {
     const game=new Game(),nav=navigator(index);game.start(index);
     const targets=[...game.level.items.filter(i=>i.type==='key'),game.level.items.find(i=>i.type==='exit')];
     for(const target of targets) {
       const route=nav.search(game.pose(),target);assert(route,`Level ${index+1}: no route to ${target.type}`);
       for(const action of route) {
-        game.update(.25);game.update(.25);game.update(.25);
+        while(game.cooldown>0)game.update(1/60);
+        const destination=nav.next(game.pose(),action);
+        const entering=(game.level.enemies||[]).find(enemy=>faceId(enemy)===faceId(destination)&&faceId(enemy)!==faceId(game.pose()));
+        if(entering){
+          // Wait on an adjacent safe face until the pulse has ended, then
+          // cross during cooldown. Enemies remain active throughout replay.
+          for(let waited=0;waited<450;waited++){
+            const clock=Math.max(0,game.enemies.time-entering.offset)%6.57;
+            if(clock>=4.58&&clock<5)break;
+            game.update(1/60);
+          }
+        }
         assert.equal(game.state,'playing',`Level ${index+1}: ended before target`);
         assert(action==='jump'?game.jump():game.move(action));
         assert.equal(game.lives,3,`Level ${index+1}: unsafe route`);

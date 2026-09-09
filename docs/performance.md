@@ -8,7 +8,9 @@ Balanced mode reduces shadow resolution, cloud count, glass target resolution an
 
 ## ORBIT 2
 
-The new renderer retains instancing and preparation from ORBIT. Skin effects use a fixed pool of 240 GPU points and 96 instanced surface marks. Flying actors and mechanical scenery are batched; particles never create individual draw calls. The ORBIT 2 browser check measured 85 calls on level 1 with Inferno and 213 on level 24, below the existing 270-call regression limit. These are draw-call measurements, not a promise of a particular frame rate on phones.
+The new renderer retains instancing and preparation from ORBIT. Skin effects use a fixed pool of 360 GPU points (180 on Balanced), 96 smoke sprites (40 on Balanced), 64 shared fragments and 96 instanced surface marks. Flying actors and mechanical scenery are batched; particles never create individual draw calls. The ORBIT 2 browser check measured 85 calls on level 1 with Inferno and 213 on level 24, below the existing 270-call regression limit. These are draw-call measurements, not a promise of a particular frame rate on phones.
+
+The 40-level update measured 242 full-frame draw calls on level 40 with three sentinels and Inferno effects at 1440 × 960, DPR 1. This was a desktop Chrome check, not a universal device benchmark. Effects reduce their active budget after sustained slow frames. Enemy materials are prepared behind the level loader before gameplay begins.
 
 ## Original ORBIT baseline comparison
 
