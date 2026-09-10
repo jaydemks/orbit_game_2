@@ -27,6 +27,36 @@ test('ORBIT 2 saves are separate and Extreme accelerates, coasts, and pauses', a
   expect(await page.evaluate(() => window.__ORBIT__.progress.difficulty)).toBe('extreme');
 });
 
+test('third-person camera stays continuous while rolling and jumping a gap',async({page})=>{
+  await page.addInitScript(()=>localStorage.setItem('orbit2.progress.v1',JSON.stringify({unlocked:40})));
+  await ready(page);await page.evaluate(()=>window.__ORBIT__.start(1));await page.waitForTimeout(250);
+  await page.evaluate(()=>{
+    const {view}=window.__ORBIT__;window.__cameraSamples=[];
+    const sample=()=>{
+      window.__cameraSamples.push({position:view.camera.position.toArray(),quaternion:view.camera.quaternion.toArray(),side:view.cameraAvoidanceSign});
+      if(window.__cameraSamples.length<150)requestAnimationFrame(sample);
+    };requestAnimationFrame(sample);
+  });
+  await page.keyboard.press('w');await page.waitForTimeout(320);
+  await page.keyboard.press('w');await page.waitForTimeout(320);
+  await page.keyboard.press('Space');await page.waitForTimeout(900);
+  const continuity=await page.evaluate(()=>{
+    const rows=window.__cameraSamples;let maxStep=0,maxAngle=0,sideChanges=0;
+    for(let i=1;i<rows.length;i++){
+      const a=rows[i-1],b=rows[i];
+      maxStep=Math.max(maxStep,Math.hypot(...b.position.map((v,j)=>v-a.position[j])));
+      const dot=Math.abs(b.quaternion.reduce((sum,v,j)=>sum+v*a.quaternion[j],0));
+      maxAngle=Math.max(maxAngle,2*Math.acos(Math.min(1,dot)));
+      if(a.side!==b.side)sideChanges++;
+    }
+    return {count:rows.length,maxStep,maxAngle,sideChanges};
+  });
+  expect(continuity.count).toBeGreaterThan(60);
+  expect(continuity.maxStep).toBeLessThan(.65);
+  expect(continuity.maxAngle).toBeLessThan(.16);
+  expect(continuity.sideChanges).toBeLessThanOrEqual(2);
+});
+
 test('death and portal absorption finish in 3D before the result dialog', async ({page}) => {
   await ready(page);await page.evaluate(() => window.__ORBIT__.start(0));
   await page.evaluate(() => window.__ORBIT__.game.damage('burn'));

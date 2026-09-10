@@ -196,7 +196,9 @@ function frame(now) {
   const physicalPose=game.getPhysicalPose();if(physicalPose&&!transitionRemaining&&['playing','paused'].includes(game.state))view?.setPhysicalPose({...physicalPose,grounded:!physicalPose.airborne});
   if(jumpBuffer>0) {jumpBuffer-=realDt;if(game.state==='playing'&&game.cooldown<=0){recorder.action('jump');jumpBuffer=0;}}
   if(game.difficulty!=='extreme'&&inputDelay<=0&&held.size&&game.state==='playing') { const action=held.has('jump')?'jump':[...held].at(-1); control(action); inputDelay=.12; }
-  view?.update(dt,elapsed);view?.sampleFrame(realDt*1000);requestAnimationFrame(frame);
+  // Adaptive resolution can resize and clear the render targets. Apply it
+  // before drawing so the resized buffers are filled in this same frame.
+  view?.sampleFrame(realDt*1000);view?.update(dt,elapsed);requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
 // Explicit opt-in harness: no gameplay/debug globals in ordinary sessions.

@@ -110,7 +110,7 @@ export class WorldView {
       direction: new THREE.Vector3(), right: new THREE.Vector3(), offset: new THREE.Vector3(),
       matrix: new THREE.Matrix4(), quaternion: new THREE.Quaternion(),
     };
-    this.cameraRay = new THREE.Raycaster();this.cameraHits=[];this.cameraRayOrigin=new THREE.Vector3();this.cameraRayDirection=new THREE.Vector3();this.cameraCandidate=new THREE.Vector3();this.cameraSide=new THREE.Vector3();this.occlusionDistance=null;
+    this.cameraRay = new THREE.Raycaster();this.cameraHits=[];this.cameraRayOrigin=new THREE.Vector3();this.cameraRayDirection=new THREE.Vector3();this.cameraCandidate=new THREE.Vector3();this.cameraSide=new THREE.Vector3();this.occlusionDistance=null;this.cameraAvoidanceSign=0;
     this.skinId = 'glacier';
     this.collected = new Set();
     this.elapsed = 0;
@@ -476,7 +476,7 @@ export class WorldView {
 
   setPlayer(cell, normal, forward, { jump = false, instant = false, duration, fall = false } = {}) {
     this.physical = false;
-    if (instant) { this.occlusionDistance=null; this.sequence = null; this.ball.visible = true; this.effects?.reset(); }
+    if (instant) { this.occlusionDistance=null; this.cameraAvoidanceSign=0; this.sequence = null; this.ball.visible = true; this.effects?.reset(); }
     this.fromPosition.copy(this.playerPosition);
     this.fromNormal.copy(this.targetNormal);
     this.targetNormal.copy(v3(normal, [0, 1, 0])).normalize();
@@ -695,24 +695,37 @@ export class WorldView {
     }
     if(this.mode!=='menu'){
       // Only playable blocks obstruct the chase camera; scenery never pulls it in.
-      const origin=this.cameraRayOrigin.copy(this.playerPosition).addScaledVector(this.targetNormal,.06);
+      // Cast from the same smoothed anchor the camera looks at. Casting from the
+      // moving ball while looking at the lagging anchor made jumps alternately
+      // report the floor as blocked/clear, producing a one-frame camera flash.
+      const origin=this.cameraRayOrigin.copy(target).addScaledVector(this.targetNormal,.1);
       const direction=this.cameraRayDirection.copy(desiredPosition).sub(origin);const distance=direction.length();direction.normalize();
       this.cameraRay.set(origin,direction);this.cameraRay.near=.02;this.cameraRay.far=distance;this.cameraHits.length=0;
       this.cameraRay.intersectObjects(this.levelGroup.children,false,this.cameraHits);
       let available=this.cameraHits.length?Math.max(.02,this.cameraHits[0].distance-.18):distance;
-      if(available<2){
+      // Keep the chosen shoulder until the direct view has a useful margin.
+      // Without hysteresis a block edge could swap the camera left/right on
+      // consecutive frames as ray hits changed by a few millimetres.
+      if(available<2||(this.cameraAvoidanceSign&&available<2.8)){
         // A low ceiling needs a side angle, not an extreme zoom into the shell.
         const side=this.cameraSide.crossVectors(this.playerForward,this.targetNormal).normalize();
-        for(const sign of [1,-1]){
+        let bestSign=0,bestClear=available;const preferred=this.cameraAvoidanceSign;
+        for(const sign of preferred?[preferred,-preferred]:[1,-1]){
           const candidate=this.cameraCandidate.copy(side).multiplyScalar(sign*4).addScaledVector(this.targetNormal,1.1).addScaledVector(this.playerForward,-1.5);
           const length=candidate.length();candidate.normalize();this.cameraRay.set(origin,candidate);this.cameraRay.far=length;this.cameraHits.length=0;this.cameraRay.intersectObjects(this.levelGroup.children,false,this.cameraHits);
           const clear=this.cameraHits.length?Math.max(.02,this.cameraHits[0].distance-.18):length;
-          if(clear>available){available=clear;direction.copy(candidate);}
+          const keepPreferred=sign===preferred&&clear+.55>=bestClear;
+          if(clear>bestClear||keepPreferred){bestClear=clear;bestSign=sign;direction.copy(candidate);}
         }
+        if(bestSign){available=bestClear;this.cameraAvoidanceSign=bestSign;}
+      }else{
+        this.cameraAvoidanceSign=0;
       }
       const previous=this.occlusionDistance??distance;
-      this.occlusionDistance=available<previous?available:Math.min(available,previous+dt*4);
-      if(this.occlusionDistance<distance-.01){desiredPosition.copy(origin).addScaledVector(direction,this.occlusionDistance);target.copy(this.playerPosition);}
+      // Retract quickly but over several frames; expand more slowly so a single
+      // marginal ray hit cannot make the view flash between two distances.
+      this.occlusionDistance=available<previous?Math.max(available,previous-dt*24):Math.min(available,previous+dt*4);
+      if(this.occlusionDistance<distance-.01)desiredPosition.copy(origin).addScaledVector(direction,this.occlusionDistance);
     }
     const blend = this.snapCamera ? 1 : 1 - Math.exp(-dt * (this.mode === 'menu' ? 2.5 : 5));
     if (this.mode === 'menu') this.camera.position.lerp(desiredPosition, blend);
